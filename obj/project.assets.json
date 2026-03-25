@@ -134,7 +134,7 @@
     "C:\\Users\\Bryer\\.nuget\\packages\\": {}
   },
   "project": {
-    "version": "1.0.2",
+    "version": "1.0.3",
     "restore": {
       "projectUniqueName": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\CreateXIV.csproj",
       "projectName": "CreateXIV",
