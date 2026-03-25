@@ -6,7 +6,7 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
-      "CreateAlias/1.0.0": {
+      "CreateAlias/1.0.1": {
         "dependencies": {
           "ImGui.NET": "1.91.0.1"
         },
@@ -52,7 +52,7 @@
     }
   },
   "libraries": {
-    "CreateAlias/1.0.0": {
+    "CreateAlias/1.0.1": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

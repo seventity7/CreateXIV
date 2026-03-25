@@ -134,7 +134,7 @@
     "C:\\Users\\Bryer\\.nuget\\packages\\": {}
   },
   "project": {
-    "version": "1.0.0",
+    "version": "1.0.1",
     "restore": {
       "projectUniqueName": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\CreateAlias.csproj",
       "projectName": "CreateAlias",
