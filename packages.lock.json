@@ -13,6 +13,12 @@
         "requested": "[1.2.39, )",
         "resolved": "1.2.39",
         "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
+      },
+      "ImGui.NET": {
+        "type": "Direct",
+        "requested": "[1.91.0.1, )",
+        "resolved": "1.91.0.1",
+        "contentHash": "Q7IoWTeAJ3jywfvgbFdhKCtcSeRt90ghrZiZlnHPOlcojrPcx9UbqaM3rXWsDg6vv1JKqz1BhNIK2RIwRV4Pxw=="
       }
     }
   }

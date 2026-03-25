@@ -1,0 +1,17 @@
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\Images\create.png
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\CreateAlias.deps.json
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\CreateAlias.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\ImGui.NET.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\linux-x64\native\libcimgui.so
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\osx\native\libcimgui.dylib
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\win-arm64\native\cimgui.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\win-x64\native\cimgui.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\win-x86\native\cimgui.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAlias.csproj.AssemblyReference.cache
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAlias.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAlias.AssemblyInfoInputs.cache
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAlias.AssemblyInfo.cs
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAlias.csproj.CoreCompileInputs.cache
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAlias.sourcelink.json
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAl.DD7C9E65.Up2Date
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateAlias.dll

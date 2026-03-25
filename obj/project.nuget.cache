@@ -1,11 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "PjzK9kIsBIU=",
+  "dgSpecHash": "4aIpkx0L2hw=",
   "success": true,
   "projectFilePath": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\CreateAlias.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Bryer\\.nuget\\packages\\dalamudpackager\\14.0.2\\dalamudpackager.14.0.2.nupkg.sha512",
-    "C:\\Users\\Bryer\\.nuget\\packages\\dotnet.reproduciblebuilds\\1.2.39\\dotnet.reproduciblebuilds.1.2.39.nupkg.sha512"
+    "C:\\Users\\Bryer\\.nuget\\packages\\dotnet.reproduciblebuilds\\1.2.39\\dotnet.reproduciblebuilds.1.2.39.nupkg.sha512",
+    "C:\\Users\\Bryer\\.nuget\\packages\\imgui.net\\1.91.0.1\\imgui.net.1.91.0.1.nupkg.sha512"
   ],
   "logs": [
     {
