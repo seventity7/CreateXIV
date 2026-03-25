@@ -3,7 +3,7 @@ using Dalamud.IoC;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using CreateAlias.Windows;
+using CreateXIV.Windows;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
 using System;
@@ -12,7 +12,7 @@ using System.Linq;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 
-namespace CreateAlias;
+namespace CreateXIV;
 
 public sealed unsafe class Plugin : IDalamudPlugin
 {
@@ -24,7 +24,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private const string CreateCommandName = "/create";
 
     public Configuration Configuration { get; init; }
-    public readonly WindowSystem WindowSystem = new("CreateAlias");
+    public readonly WindowSystem WindowSystem = new("CreateXIV");
 
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }

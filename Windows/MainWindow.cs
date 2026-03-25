@@ -4,7 +4,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 
-namespace CreateAlias.Windows;
+namespace CreateXIV.Windows;
 
 public class MainWindow : Window, IDisposable
 {

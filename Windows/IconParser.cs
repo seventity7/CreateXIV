@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace CreateAlias;
+namespace CreateXIV;
 
 public static class IconParser
 {

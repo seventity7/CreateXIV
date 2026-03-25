@@ -134,11 +134,11 @@
     "C:\\Users\\Bryer\\.nuget\\packages\\": {}
   },
   "project": {
-    "version": "1.0.1",
+    "version": "1.0.2",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\CreateAlias.csproj",
-      "projectName": "CreateAlias",
-      "projectPath": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\CreateAlias.csproj",
+      "projectUniqueName": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\CreateXIV.csproj",
+      "projectName": "CreateXIV",
+      "projectPath": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\CreateXIV.csproj",
       "packagesPath": "C:\\Users\\Bryer\\.nuget\\packages\\",
       "outputPath": "C:\\Users\\Bryer\\AppData\\Roaming\\XIVLauncher\\devPlugins\\Create\\SamplePlugin\\SamplePlugin\\obj\\",
       "projectStyle": "PackageReference",

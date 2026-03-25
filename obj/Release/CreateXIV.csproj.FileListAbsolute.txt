@@ -1,0 +1,17 @@
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\Images\create.png
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\CreateXIV.deps.json
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\CreateXIV.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\ImGui.NET.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\linux-x64\native\libcimgui.so
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\osx\native\libcimgui.dylib
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\win-arm64\native\cimgui.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\win-x64\native\cimgui.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\bin\Release\runtimes\win-x86\native\cimgui.dll
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.csproj.AssemblyReference.cache
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.AssemblyInfoInputs.cache
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.AssemblyInfo.cs
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.csproj.CoreCompileInputs.cache
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.sourcelink.json
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.csproj.Up2Date
+C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\Create\SamplePlugin\SamplePlugin\obj\Release\CreateXIV.dll

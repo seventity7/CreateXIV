@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace CreateAlias;
+namespace CreateXIV;
 
 public static class FfxivIcons
 {

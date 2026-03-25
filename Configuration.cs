@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace CreateAlias;
+namespace CreateXIV;
 
 [Serializable]
 public class Configuration : IPluginConfiguration
