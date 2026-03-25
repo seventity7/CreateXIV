@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("CreateXIV")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.2.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.2+7f16fe113d6023716414edf5b7328ea74f01060d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.2+0804ddfeadf2cedb21f684be6f0065fdd964de3c")]
 [assembly: System.Reflection.AssemblyProductAttribute("CreateXIV")]
 [assembly: System.Reflection.AssemblyTitleAttribute("CreateXIV")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.2.0")]
