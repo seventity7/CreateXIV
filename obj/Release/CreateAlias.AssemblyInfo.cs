@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("CreateAlias")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fd4468174694c01b35d258419561ac2d3629ba26")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9ce824935fcda4e3d0b5763d7ea7cef6d1925f7a")]
 [assembly: System.Reflection.AssemblyProductAttribute("CreateAlias")]
 [assembly: System.Reflection.AssemblyTitleAttribute("CreateAlias")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
