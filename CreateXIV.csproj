@@ -1,18 +1,25 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Dalamud.NET.Sdk/14.0.2">
+<Project Sdk="Dalamud.NET.Sdk/1.0.0">
   <PropertyGroup>
-    <Version>1.0.4</Version>
-    <PackageProjectUrl>https://github.com/seventity7/CreateXIV</PackageProjectUrl>
-    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
-    <IsPackable>false</IsPackable>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <Platforms>x64</Platforms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-  </PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-  <ItemGroup>
-    <PackageReference Include="ImGui.NET" Version="1.91.0.1" />
-  </ItemGroup>
+    <AssemblyName>CreateXIV</AssemblyName>
+    <RootNamespace>CreateXIV</RootNamespace>
+
+    <!-- Manifest fields (Packager lê daqui) -->
+    <Author>Bryer</Author>
+    <Name>CreateXIV</Name>
+    <Punchline>Create custom macro & plugin command aliases.</Punchline>
+    <Description>Create vanilla-like macro aliases (macro/shared) and plugin command aliases via /create.</Description>
+    <RepoUrl>https://github.com/seventity7/CreateXIV</RepoUrl>
+
+    <!-- API atual do Dalamud -->
+    <DalamudApiLevel>14</DalamudApiLevel>
+
+    <!-- Versão fixa (não timestamp) -->
+    <Version>1.0.4</Version>
+  </PropertyGroup>
 </Project>
