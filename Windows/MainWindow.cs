@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -12,33 +14,49 @@ public class MainWindow : Window, IDisposable
 
     private string macroAliasInput = string.Empty;
     private string macroCommandInput = string.Empty;
+    private string macroCategoryInput = string.Empty;
+    private Vector4 macroCategoryColor = new(0.58f, 0.90f, 0.66f, 1f);
+    private bool macroPinned = false;
+
     private string commandAliasInput = string.Empty;
     private string commandCommandInput = string.Empty;
+    private string commandCategoryInput = string.Empty;
+    private Vector4 commandCategoryColor = new(0.62f, 0.70f, 0.78f, 1f);
+    private bool commandPinned = false;
 
-    private static readonly Vector4 MacroRowTextColor = new(1f, 0.80f, 0.88f, 1.00f);
-    private static readonly Vector4 CommandRowTextColor = new(0.52f, 0.84f, 0.60f, 1.00f);
+    // Organization controls
+    private string searchText = string.Empty;
+    private int typeFilter = 0; // 0 all, 1 macro, 2 command
+    private string categoryFilter = "All";
 
-    private static readonly Vector4 PanelBg = new(0.28f, 0.24f, 0.30f, 0.94f);
-    private static readonly Vector4 PanelBorder = new(0.63f, 0.56f, 0.70f, 0.95f);
-    private static readonly Vector4 HeaderText = new(0.98f, 0.93f, 0.88f, 1.00f);
-    private static readonly Vector4 BodyText = new(0.95f, 0.92f, 0.88f, 1.00f);
-    private static readonly Vector4 SubtleText = new(0.83f, 0.78f, 0.82f, 1.00f);
+    private string importBuffer = string.Empty;
 
-    private const float TableRowHeight = 32f;
-    private const float HeaderRowHeight = 28f;
+    // Theme-ish colors
+    private static readonly Vector4 MacroBaseColor = new(0.72f, 0.80f, 0.88f, 1.00f);
+    private static readonly Vector4 CommandBaseColor = new(0.52f, 0.84f, 0.60f, 1.00f);
+
+    private static readonly Vector4 TooltipBg = new(0.34f, 0.29f, 0.36f, 0.92f);
+    private static readonly Vector4 TooltipBorder = new(0f, 0f, 0f, 0.85f);
+    private static readonly Vector4 TooltipText = new(0.95f, 0.92f, 0.88f, 1.00f);
+
+    private static readonly Vector4 ButtonTextWhite = new(1f, 1f, 1f, 1f);
+    private static readonly Vector4 ButtonTextBlack = new(0f, 0f, 0f, 1f);
+
+    private static readonly Vector4 PinYellow = new(1.00f, 0.90f, 0.30f, 1f);
+    private static readonly Vector4 BorderWhite = new(1.00f, 1.00f, 1.00f, 1f);
 
     public MainWindow(Plugin plugin)
-        : base("###AliasCreatorMain", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoTitleBar)
+        : base("CreateXIV###CreateXIVMain", ImGuiWindowFlags.NoScrollbar)
     {
         this.plugin = plugin;
 
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(900, 580),
+            MinimumSize = new Vector2(900, 560),
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
         };
 
-        Size = new Vector2(980, 660);
+        Size = new Vector2(980, 680);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
@@ -54,654 +72,680 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        PushVanillaPastelStyle();
-
-        DrawTopBanner();
-
+        DrawMacroAliasSection();
         ImGui.Spacing();
-
-        DrawSectionCard("Macro Alias", MacroRowTextColor, DrawMacroAliasRowContents);
-        ImGui.Spacing();
-        DrawSectionCard("Plugin Command Alias", CommandRowTextColor, DrawPluginCommandRowContents);
-
-        ImGui.Spacing();
-        DrawSavedAliasesPanel();
-
-        PopVanillaPastelStyle();
-    }
-
-    private void DrawTopBanner()
-    {
-        const float closeButtonWidth = 32f;
-        const float closeButtonHeight = 18f;
-        const float helpButtonSize = 18f;
-
-        using var color = new StyleColorScope(
-            (ImGuiCol.ChildBg, new Vector4(0.34f, 0.29f, 0.36f, 0.96f)),
-            (ImGuiCol.Border, PanelBorder));
-
-        ImGui.BeginChild("##TopBanner", new Vector2(0, 84), true, ImGuiWindowFlags.NoScrollbar);
-
-        PushSecondaryButtonStyle();
-        var closeX = MathF.Max(0f, ImGui.GetContentRegionAvail().X - closeButtonWidth);
-        ImGui.SetCursorPos(new Vector2(closeX, 3f));
-        if (DrawBoldButton("X", "##CloseMainWindow", new Vector2(closeButtonWidth, closeButtonHeight)))
-            IsOpen = false;
-        ImGui.PopStyleColor(3);
-
-        ImGui.SetCursorPos(new Vector2(8f, 6f));
-        DrawBoldText("CREATE XIV", HeaderText);
-
-        ImGui.SameLine(0f, 6f);
-        ImGui.SetCursorPosY(6f);
-
-        PushSecondaryButtonStyle();
-        if (DrawBoldButton("?", "##HelpMainWindow", new Vector2(helpButtonSize, helpButtonSize)))
-        {
-
-        }
-        ImGui.PopStyleColor(3);
-
-        DrawHelpTooltip();
-
-        var description = "Create vanilla-like macro aliases with 'macro:XX' or 'shared:XX', and plugin command aliases such as '/lifestream' from another Dalamud plugin.";
-        ImGui.SetCursorPos(new Vector2(8f, 34f));
-        ImGui.PushStyleColor(ImGuiCol.Text, BodyText);
-        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - 84f);
-        ImGui.TextUnformatted(description);
-        ImGui.PopTextWrapPos();
-        ImGui.PopStyleColor();
-
-        ImGui.EndChild();
-    }
-
-    private void DrawHelpTooltip()
-    {
-        if (!ImGui.IsItemHovered())
-            return;
-
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(6f, 4f));
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 6f);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
-
-        ImGui.PushStyleColor(ImGuiCol.PopupBg, new Vector4(0.34f, 0.29f, 0.36f, 0.95f));
-        ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(0f, 0f, 0f, 0.95f));
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(BodyText.X, BodyText.Y, BodyText.Z, 1.00f));
-
-        ImGui.BeginTooltip();
-
-        // menor texto
-        ImGui.SetWindowFontScale(0.80f);
-
-        // menor largura
-        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + 260f);
-
-        ImGui.TextUnformatted("> Do not utilize 'slash' on Alias names.");
-        ImGui.TextUnformatted("> Make SURE to use slash ' / ' on the Plugin command \"command:\" field.");
-        ImGui.TextUnformatted("> You cant create a Alias named 'create' or point a command to 'create'.");
-        ImGui.TextUnformatted("> Native game commands should be runned through the Macro option and not Plugin.");
-        ImGui.TextUnformatted("> The pointed Macro need to exist on the UserMacros ingame and it contents can only be edited there.");
-        ImGui.TextUnformatted("> The plugin saves and remember your list.");
-        ImGui.TextUnformatted("> Trying to use a existing Alias name will overwrite(update) the existing one.");
-
+        DrawCommandAliasSection();
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
-        DrawCenteredTooltipText("By: Bryer");
+        DrawToolsRow();
+        ImGui.Spacing();
+        DrawAliasTable();
+    }
 
-        ImGui.PopTextWrapPos();
+    // =========================================================
+    // Sections + Tooltips
+    // =========================================================
 
-        // borda manual completa
+    private void DrawMacroAliasSection()
+    {
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Macro Alias");
+        ImGui.SameLine(0f, 6f);
+
+        DrawTinyHelpButton("##macroHelp", DrawMacroTooltipContents);
+
+        ImGui.Spacing();
+
+        DrawAliasInputRow(
+            ref macroAliasInput,
+            ref macroCommandInput,
+            ref macroCategoryInput,
+            ref macroCategoryColor,
+            ref macroPinned,
+            saveButtonText: "Save Macro",
+            onSave: () =>
+            {
+                PersistCategoryColor(macroCategoryInput, macroCategoryColor);
+
+                if (plugin.AddOrUpdateMacroAlias(macroAliasInput, macroCommandInput, macroCategoryInput, macroPinned, out var msg))
+                    Plugin.ChatGui.Print(msg, "CreateXIV");
+                else
+                    Plugin.ChatGui.PrintError(msg, "CreateXIV");
+            },
+            clearButtonText: "Clear Macro",
+            onClear: () =>
+            {
+                macroAliasInput = string.Empty;
+                macroCommandInput = string.Empty;
+                macroCategoryInput = string.Empty;
+                macroPinned = false;
+            },
+            kind: AliasKind.Macro
+        );
+    }
+
+    private void DrawCommandAliasSection()
+    {
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Command Alias");
+        ImGui.SameLine(0f, 6f);
+
+        DrawTinyHelpButton("##cmdHelp", DrawCommandTooltipContents);
+
+        ImGui.Spacing();
+
+        DrawAliasInputRow(
+            ref commandAliasInput,
+            ref commandCommandInput,
+            ref commandCategoryInput,
+            ref commandCategoryColor,
+            ref commandPinned,
+            saveButtonText: "Save Command",
+            onSave: () =>
+            {
+                PersistCategoryColor(commandCategoryInput, commandCategoryColor);
+
+                if (plugin.AddOrUpdateCommandAlias(commandAliasInput, commandCommandInput, commandCategoryInput, commandPinned, out var msg))
+                    Plugin.ChatGui.Print(msg, "CreateXIV");
+                else
+                    Plugin.ChatGui.PrintError(msg, "CreateXIV");
+            },
+            clearButtonText: "Clear Command",
+            onClear: () =>
+            {
+                commandAliasInput = string.Empty;
+                commandCommandInput = string.Empty;
+                commandCategoryInput = string.Empty;
+                commandPinned = false;
+            },
+            kind: AliasKind.Command
+        );
+    }
+
+    private void DrawTinyHelpButton(string id, Action drawTooltipContents)
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(6f, 2f));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4f);
+        ImGui.Button($"?{id}", new Vector2(18f, 18f));
+        ImGui.PopStyleVar(2);
+
+        if (ImGui.IsItemHovered())
+        {
+            PushTooltipStyle();
+            ImGui.BeginTooltip();
+            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + 360f);
+
+            drawTooltipContents();
+
+            ImGui.PopTextWrapPos();
+            ImGui.EndTooltip();
+            PopTooltipStyle();
+        }
+    }
+
+    private void DrawMacroTooltipContents()
+    {
+        DrawTooltipHeader("°。How to use  °。");
+        ImGui.TextUnformatted("・Type the command name on the field \"Alias\"");
+        ImGui.TextUnformatted("・Type the macro or macro sequence on the field \"Command\"");
+        ImGui.Spacing();
+
+        DrawTooltipHeader("°。Examples  °。");
+        ImGui.TextUnformatted("・Alias: Test  Command: macro:1  |  /test will execute macro 1");
+        ImGui.TextUnformatted("・Alias: Geko  Command: macro:12, macro:20  |  /geko will execute macro 12 and then macro 20");
+        ImGui.TextUnformatted("・Alias: Bread  Command: macro:5, wait:3, macro:7  |  /bread will execute macro 5, wait 3 seconds and execute macro 7");
+        ImGui.TextUnformatted("・ Use \"share:XX\" instead of \"macro:XX\" if you want to use shared macros instead");
+        ImGui.Spacing();
+
+        DrawTooltipHeader("°。Usage  °。");
+        ImGui.TextUnformatted("・You can execute any existing macro from your game macro-list");
+        ImGui.TextUnformatted("・Duplicate alias names will overwrite existing ones");
+        ImGui.TextUnformatted("・Native game commands are supported through macros");
+    }
+
+    private void DrawCommandTooltipContents()
+    {
+        DrawTooltipHeader("°。How to use  °。");
+        ImGui.TextUnformatted("・Type the command name on the field \"Alias\"");
+        ImGui.TextUnformatted("・Type the command you want it to execute on the field \"Command\"");
+        ImGui.TextUnformatted("・Always start the command field with '/'");
+        ImGui.TextUnformatted("・Do NOT use '/' in Alias names");
+        ImGui.Spacing();
+
+        DrawTooltipHeader("°。Examples  °。");
+        ImGui.TextUnformatted("・Alias: Test  Command: /lifestream golem  |  /test will execute \"/lifestream golem\".");
+        DrawTooltipItalicNote("(Lifestream plugin)");
+        ImGui.TextUnformatted("・Alias: PCT  Command: /barload pct  |  /pct will execute \"/barload pct\".");
+        DrawTooltipItalicNote("(Bartender plugin)");
+        ImGui.TextUnformatted("・Alias: RPGraph  Command: /gload rpgraphics  |  /RPGraphic will execute \"/gload rpgraphics\".");
+        DrawTooltipItalicNote("(Graphics Config plugin)");
+        ImGui.Spacing();
+
+        DrawTooltipHeader("°。Usage  °。");
+        ImGui.TextUnformatted("・You can execute any command from any plugin");
+        ImGui.TextUnformatted("・You can't execute native game commands (Ex: /echo, /tell)");
+        ImGui.TextUnformatted("・You can't make a '/create' command or relatives");
+        ImGui.TextUnformatted("・Duplicate alias names will overwrite existing ones");
+    }
+
+    private void DrawTooltipHeader(string text)
+    {
+        var avail = 360f;
+        var size = ImGui.CalcTextSize(text);
+        var x = ImGui.GetCursorPosX();
+        var offset = MathF.Max(0f, (avail - size.X) * 0.5f);
+        ImGui.SetCursorPosX(x + offset);
+
         var drawList = ImGui.GetWindowDrawList();
-        var pos = ImGui.GetWindowPos();
-        var size = ImGui.GetWindowSize();
+        var pos = ImGui.GetCursorScreenPos();
+        var col = ImGui.GetColorU32(TooltipText);
+        var shadow = ImGui.GetColorU32(new Vector4(0, 0, 0, 0.6f));
+        drawList.AddText(pos + new Vector2(1f, 1f), shadow, text);
+        drawList.AddText(pos, col, text);
+        ImGui.Dummy(size);
+        ImGui.Spacing();
+    }
 
-        const float rounding = 6f;
-        const float thickness = 1.5f;
-        var borderColor = ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.95f));
+    private void DrawTooltipItalicNote(string text)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.80f, 0.78f, 0.86f, 1f));
+        ImGui.TextUnformatted(text);
+        ImGui.PopStyleColor();
+    }
 
-        // inset leve para não clipar
-        var left = pos.X + 1f;
-        var top = pos.Y + 1f;
-        var right = pos.X + size.X - 1f;
-        var bottom = pos.Y + size.Y - 1f;
+    private void PushTooltipStyle()
+    {
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(10f, 8f));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 6f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 1.2f);
+        ImGui.PushStyleColor(ImGuiCol.PopupBg, TooltipBg);
+        ImGui.PushStyleColor(ImGuiCol.Border, TooltipBorder);
+        ImGui.PushStyleColor(ImGuiCol.Text, TooltipText);
+    }
 
-        // linhas
-        drawList.AddLine(new Vector2(left + rounding, top), new Vector2(right - rounding, top), borderColor, thickness);
-        drawList.AddLine(new Vector2(left + rounding, bottom), new Vector2(right - rounding, bottom), borderColor, thickness);
-        drawList.AddLine(new Vector2(left, top + rounding), new Vector2(left, bottom - rounding), borderColor, thickness);
-        drawList.AddLine(new Vector2(right, top + rounding), new Vector2(right, bottom - rounding), borderColor, thickness);
-
-        // cantos arredondados
-        drawList.PathArcTo(new Vector2(left + rounding, top + rounding), rounding, MathF.PI, MathF.PI * 1.5f, 10);
-        drawList.PathStroke(borderColor, ImDrawFlags.None, thickness);
-
-        drawList.PathArcTo(new Vector2(right - rounding, top + rounding), rounding, MathF.PI * 1.5f, MathF.PI * 2f, 10);
-        drawList.PathStroke(borderColor, ImDrawFlags.None, thickness);
-
-        drawList.PathArcTo(new Vector2(right - rounding, bottom - rounding), rounding, 0f, MathF.PI * 0.5f, 10);
-        drawList.PathStroke(borderColor, ImDrawFlags.None, thickness);
-
-        drawList.PathArcTo(new Vector2(left + rounding, bottom - rounding), rounding, MathF.PI * 0.5f, MathF.PI, 10);
-        drawList.PathStroke(borderColor, ImDrawFlags.None, thickness);
-
-        ImGui.EndTooltip();
-
-        // volta a escala normal
-        ImGui.SetWindowFontScale(1.00f);
-
+    private void PopTooltipStyle()
+    {
         ImGui.PopStyleColor(3);
         ImGui.PopStyleVar(3);
     }
 
-    private void DrawCenteredTooltipText(string text)
-    {
-        var avail = ImGui.GetWindowWidth() - (ImGui.GetStyle().WindowPadding.X * 2f);
-        var size = ImGui.CalcTextSize(text);
-        var offsetX = MathF.Max(0f, (avail - size.X) * 0.5f);
-
-        if (offsetX > 0f)
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
-
-        ImGui.TextUnformatted(text);
-    }
-    private void DrawSectionCard(string title, Vector4 titleColor, Action drawContents)
-    {
-        using var color = new StyleColorScope(
-            (ImGuiCol.ChildBg, PanelBg),
-            (ImGuiCol.Border, PanelBorder));
-
-        ImGui.BeginChild($"##Section_{title}", new Vector2(0, 124), true, ImGuiWindowFlags.NoScrollbar);
-
-        DrawBoldShadowText(title, titleColor);
-
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        drawContents();
-
-        ImGui.EndChild();
-    }
-
-    private void DrawMacroAliasRowContents()
-    {
-        DrawAliasInputRow(
-            "##macroAliasInput",
-            ref macroAliasInput,
-            "##macroCommandInput",
-            ref macroCommandInput,
-            "Save Macro Alias",
-            SaveMacroAlias,
-            "Clear Macro",
-            () =>
-            {
-                macroAliasInput = string.Empty;
-                macroCommandInput = string.Empty;
-            });
-
-        ImGui.Spacing();
-        ImGui.PushStyleColor(ImGuiCol.Text, SubtleText);
-        ImGui.TextWrapped("Use 'macro:XX' or 'shared:XX'. Example: Alias = cheese, Command = macro:57");
-        ImGui.PopStyleColor();
-    }
-
-    private void DrawPluginCommandRowContents()
-    {
-        DrawAliasInputRow(
-            "##pluginAliasInput",
-            ref commandAliasInput,
-            "##pluginCommandInput",
-            ref commandCommandInput,
-            "Save Plugin Alias",
-            SavePluginAlias,
-            "Clear Plugin",
-            () =>
-            {
-                commandAliasInput = string.Empty;
-                commandCommandInput = string.Empty;
-            });
-
-        ImGui.Spacing();
-        ImGui.PushStyleColor(ImGuiCol.Text, SubtleText);
-        ImGui.TextWrapped("Create a slash command from another plugin. Example: Alias = cheese, Plugin Command = /lifestream Mist w18 p15");
-        ImGui.PopStyleColor();
-    }
+    // =========================================================
+    // Input rows
+    // =========================================================
 
     private void DrawAliasInputRow(
-        string aliasInputId,
         ref string aliasValue,
-        string commandInputId,
         ref string commandValue,
+        ref string categoryValue,
+        ref Vector4 categoryColor,
+        ref bool pinned,
         string saveButtonText,
         Action onSave,
         string clearButtonText,
-        Action onClear)
+        Action onClear,
+        AliasKind kind)
     {
-        const float aliasWidth = 130f;
-        const float commandWidth = 420f;
+        var cleanedAlias = (aliasValue ?? string.Empty).Trim();
+        if (cleanedAlias.StartsWith('/'))
+            cleanedAlias = cleanedAlias.TrimStart('/');
+        aliasValue = cleanedAlias;
 
-        ImGui.PushStyleColor(ImGuiCol.Text, BodyText);
+        var catTrim = (categoryValue ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(catTrim) && TryGetCategoryColor(catTrim, out var loaded))
+            categoryColor = loaded;
+
         ImGui.AlignTextToFramePadding();
-        ImGui.Text("Alias:");
-        ImGui.PopStyleColor();
+        ImGui.TextUnformatted("Alias:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(160f);
+        ImGui.InputText($"##alias_{saveButtonText}", ref aliasValue, 80);
 
         ImGui.SameLine();
-        ImGui.SetNextItemWidth(aliasWidth);
-        ImGui.InputText(aliasInputId, ref aliasValue, 100);
-
-        ImGui.SameLine();
-
-        ImGui.PushStyleColor(ImGuiCol.Text, BodyText);
         ImGui.AlignTextToFramePadding();
-        ImGui.Text("Command:");
+        ImGui.TextUnformatted("Command:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(350f);
+        ImGui.InputText($"##cmd_{saveButtonText}", ref commandValue, 512);
+
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Category:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(155f);
+        DrawCategoryComboWithTyping($"##cat_{saveButtonText}", ref categoryValue);
+
+        ImGui.SameLine(0f, 6f);
+        ImGui.PushID($"catColor_{saveButtonText}");
+        ImGui.ColorEdit4("##catColor", ref categoryColor,
+            ImGuiColorEditFlags.NoInputs |
+            ImGuiColorEditFlags.NoLabel |
+            ImGuiColorEditFlags.NoTooltip |
+            ImGuiColorEditFlags.NoAlpha);
+        ImGui.PopID();
+
+        ImGui.SameLine(0f, 8f);
+        DrawFavoriteStarButton_InputRow($"##pin_{saveButtonText}", ref pinned);
+
+        var aliasNorm = Plugin.NormalizeAlias(aliasValue);
+        var cmdNorm = Plugin.NormalizeCommand(commandValue);
+
+        bool ok = !string.IsNullOrWhiteSpace(aliasNorm) && !string.IsNullOrWhiteSpace(cmdNorm);
+        if (string.Equals(aliasNorm, "/create", StringComparison.OrdinalIgnoreCase))
+            ok = false;
+        if (kind == AliasKind.Command && !cmdNorm.StartsWith('/'))
+            ok = false;
+
+        ImGui.SameLine(0f, 10f);
+        ImGui.PushStyleColor(ImGuiCol.Text, ok ? new Vector4(0.52f, 0.84f, 0.60f, 1f) : new Vector4(1f, 0.45f, 0.45f, 1f));
+        ImGui.TextUnformatted(ok ? "OK" : "Invalid");
         ImGui.PopStyleColor();
-
-        ImGui.SameLine();
-        ImGui.SetNextItemWidth(commandWidth);
-        ImGui.InputText(commandInputId, ref commandValue, 500);
-
-        ImGui.SameLine();
-
-        PushVanillaButtonStyle();
-        if (DrawBoldButton(saveButtonText, $"##{saveButtonText.Replace(" ", string.Empty)}", Vector2.Zero))
-            onSave();
-        ImGui.PopStyleColor(3);
-
-        ImGui.SameLine();
-
-        PushSecondaryButtonStyle();
-        if (DrawBoldButton(clearButtonText, $"##{clearButtonText.Replace(" ", string.Empty)}", Vector2.Zero))
-            onClear();
-        ImGui.PopStyleColor(3);
-    }
-
-    private void DrawSavedAliasesPanel()
-    {
-        using var color = new StyleColorScope(
-            (ImGuiCol.ChildBg, new Vector4(0.23f, 0.20f, 0.25f, 0.98f)),
-            (ImGuiCol.Border, PanelBorder));
-
-        ImGui.BeginChild("##SavedAliasesPanel", new Vector2(0, 0), true, ImGuiWindowFlags.NoScrollbar);
-
-        using (new StyleColorScope(
-                   (ImGuiCol.ChildBg, new Vector4(0.34f, 0.29f, 0.36f, 0.96f)),
-                   (ImGuiCol.Border, PanelBorder)))
-        {
-            ImGui.BeginChild("##SavedAliasesTitleBar", new Vector2(0, 30), true, ImGuiWindowFlags.NoScrollbar);
-            ImGui.SetCursorPosY(5f);
-            DrawCenteredBoldText("Saved Aliases", HeaderText);
-            ImGui.EndChild();
-        }
 
         ImGui.Spacing();
-        DrawAliasTableInsidePanel();
 
-        ImGui.EndChild();
+        if (ImGui.Button(saveButtonText))
+            onSave();
+
+        ImGui.SameLine();
+        if (ImGui.Button(clearButtonText))
+            onClear();
+
+        ImGui.SameLine();
+        if (ImGui.Button("Test"))
+        {
+            if (plugin.TestAlias(aliasNorm, out var msg))
+                Plugin.ChatGui.Print(msg, "CreateXIV");
+            else
+                Plugin.ChatGui.PrintError(msg, "CreateXIV");
+        }
     }
 
-    private void DrawAliasTableInsidePanel()
+    private void DrawFavoriteStarButton_InputRow(string id, ref bool pinned)
     {
-        using var color = new StyleColorScope(
-            (ImGuiCol.TableHeaderBg, new Vector4(0.40f, 0.34f, 0.43f, 0.96f)),
-            (ImGuiCol.TableBorderStrong, PanelBorder),
-            (ImGuiCol.TableBorderLight, new Vector4(0.55f, 0.49f, 0.60f, 0.60f)),
-            (ImGuiCol.FrameBg, new Vector4(0.49f, 0.43f, 0.54f, 0.85f)),
-            (ImGuiCol.FrameBgHovered, new Vector4(0.56f, 0.49f, 0.61f, 0.92f)),
-            (ImGuiCol.FrameBgActive, new Vector4(0.62f, 0.55f, 0.67f, 1.00f)));
+        var onBg = new Vector4(0.98f, 0.86f, 0.35f, 1f);
+        var offBg = new Vector4(0.55f, 0.55f, 0.60f, 1f);
 
-        if (!ImGui.BeginTable("AliasTable", 6, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.ScrollY))
+        var btn = pinned ? onBg : offBg;
+        var hover = pinned ? new Vector4(1f, 0.92f, 0.45f, 1f) : new Vector4(0.70f, 0.70f, 0.75f, 1f);
+        var active = pinned ? new Vector4(1f, 0.95f, 0.55f, 1f) : new Vector4(0.80f, 0.80f, 0.85f, 1f);
+
+        ImGui.PushStyleColor(ImGuiCol.Button, btn);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, active);
+
+        ImGui.PushStyleColor(ImGuiCol.Text, pinned ? ButtonTextBlack : ButtonTextWhite);
+
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(6f, 4f));
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4f);
+
+        if (ImGui.Button($"★{id}", new Vector2(26f, 0f)))
+            pinned = !pinned;
+
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor(4);
+    }
+
+    private void DrawCategoryComboWithTyping(string id, ref string categoryValue)
+    {
+        var cats = plugin.Configuration.Aliases
+            .Select(a => (a.Category ?? string.Empty).Trim())
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var k in plugin.Configuration.CategoryColors.Keys)
+        {
+            var kk = (k ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(kk) && !cats.Contains(kk, StringComparer.OrdinalIgnoreCase))
+                cats.Add(kk);
+        }
+
+        cats = cats.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+
+        var preview = string.IsNullOrWhiteSpace(categoryValue) ? "(none)" : categoryValue;
+
+        if (ImGui.BeginCombo(id, preview))
+        {
+            ImGui.SetNextItemWidth(-1);
+            ImGui.InputText("##catTyping", ref categoryValue, 64);
+
+            ImGui.Separator();
+
+            var filter = (categoryValue ?? string.Empty).Trim();
+
+            foreach (var c in cats)
+            {
+                if (!string.IsNullOrWhiteSpace(filter) &&
+                    !c.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (ImGui.Selectable(c))
+                    categoryValue = c;
+            }
+
+            ImGui.EndCombo();
+        }
+    }
+
+    private void PersistCategoryColor(string category, Vector4 color)
+    {
+        var cat = (category ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cat))
             return;
 
-        ImGui.TableSetupColumn("N°", ImGuiTableColumnFlags.WidthFixed, 52);
-        ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthFixed, 92);
-        ImGui.TableSetupColumn("Alias", ImGuiTableColumnFlags.WidthFixed, 150);
-        ImGui.TableSetupColumn("Command", ImGuiTableColumnFlags.WidthStretch);
-        ImGui.TableSetupColumn("Edit", ImGuiTableColumnFlags.WidthFixed, 74);
-        ImGui.TableSetupColumn("Delete", ImGuiTableColumnFlags.WidthFixed, 78);
+        plugin.Configuration.CategoryColors[cat] = ToHexRgb(color);
+        plugin.Configuration.Save();
+    }
 
-        DrawCustomHeaderRow();
+    private bool TryGetCategoryColor(string category, out Vector4 color)
+    {
+        var cat = (category ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cat))
+        {
+            color = default;
+            return false;
+        }
+
+        if (!plugin.Configuration.CategoryColors.TryGetValue(cat, out var hex) || string.IsNullOrWhiteSpace(hex))
+        {
+            color = default;
+            return false;
+        }
+
+        return TryParseHexRgb(hex, out color);
+    }
+
+    // =========================================================
+    // Tools row
+    // =========================================================
+
+    private void DrawToolsRow()
+    {
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Search:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(220f);
+        ImGui.InputText("##search", ref searchText, 128);
+
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Type:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(140f);
+        var typeItems = new[] { "All", "Macro", "Command" };
+        ImGui.Combo("##typeFilter", ref typeFilter, typeItems, typeItems.Length);
+
+        var cats = plugin.Configuration.Aliases
+            .Select(a => (a.Category ?? string.Empty).Trim())
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        cats.Insert(0, "All");
+
+        ImGui.SameLine();
+        ImGui.TextUnformatted("Category:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(160f);
+
+        var currentIndex = Math.Max(0, cats.FindIndex(x => string.Equals(x, categoryFilter, StringComparison.OrdinalIgnoreCase)));
+        if (ImGui.Combo("##catFilter", ref currentIndex, cats.ToArray(), cats.Count))
+            categoryFilter = cats[currentIndex];
+
+        ImGui.SameLine();
+        if (ImGui.Button("Undo Delete"))
+        {
+            if (plugin.UndoLastDelete(out var msg))
+                Plugin.ChatGui.Print(msg, "CreateXIV");
+            else
+                Plugin.ChatGui.PrintError(msg, "CreateXIV");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Export (Clipboard)"))
+        {
+            var json = plugin.ExportAliasesJson();
+            ImGui.SetClipboardText(json);
+            Plugin.ChatGui.Print("Exported aliases to clipboard.", "CreateXIV");
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Import (Clipboard)"))
+        {
+            var clip = ImGui.GetClipboardText();
+            importBuffer = clip is null ? string.Empty : clip;
+
+            if (plugin.ImportAliasesJson(importBuffer, out var msg))
+                Plugin.ChatGui.Print(msg, "CreateXIV");
+            else
+                Plugin.ChatGui.PrintError(msg, "CreateXIV");
+        }
+    }
+
+    // =========================================================
+    // Table ★: border white; if pinned, border+text yellow
+    // =========================================================
+
+    private void DrawAliasTable()
+    {
+        if (!ImGui.BeginTable("AliasTable", 8, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.ScrollY))
+            return;
+
+        ImGui.TableSetupColumn("N°", ImGuiTableColumnFlags.WidthFixed, 45);
+        ImGui.TableSetupColumn("★", ImGuiTableColumnFlags.WidthFixed, 34);
+        ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthFixed, 80);
+        ImGui.TableSetupColumn("Category", ImGuiTableColumnFlags.WidthFixed, 120);
+        ImGui.TableSetupColumn("Alias", ImGuiTableColumnFlags.WidthFixed, 140);
+        ImGui.TableSetupColumn("Command", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Edit", ImGuiTableColumnFlags.WidthFixed, 60);
+        ImGui.TableSetupColumn("Del", ImGuiTableColumnFlags.WidthFixed, 60);
+        ImGui.TableHeadersRow();
 
         var aliases = plugin.Configuration.Aliases
-            .OrderBy(x => x.Number)
+            .OrderByDescending(x => x.Pinned)
+            .ThenBy(x => x.Number)
             .ToList();
+
+        var s = (searchText ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(s))
+        {
+            aliases = aliases.Where(a =>
+                (a.Alias?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (a.Command?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (a.Category?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
+            ).ToList();
+        }
+
+        if (typeFilter == 1) aliases = aliases.Where(a => a.Kind == AliasKind.Macro).ToList();
+        if (typeFilter == 2) aliases = aliases.Where(a => a.Kind == AliasKind.Command).ToList();
+
+        if (!string.Equals(categoryFilter, "All", StringComparison.OrdinalIgnoreCase))
+            aliases = aliases.Where(a => string.Equals((a.Category ?? string.Empty).Trim(), categoryFilter, StringComparison.OrdinalIgnoreCase)).ToList();
 
         for (var i = 0; i < aliases.Count; i++)
         {
             var entry = aliases[i];
-            var normalizedAlias = Plugin.NormalizeAlias(entry.Alias);
-            var normalizedCommand = Plugin.NormalizeCommand(entry.Command);
+            var alias = Plugin.NormalizeAlias(entry.Alias);
+            var cmd = Plugin.NormalizeCommand(entry.Command);
+            var category = (entry.Category ?? string.Empty).Trim();
 
-            var rowTextColor = entry.Kind == AliasKind.Macro ? MacroRowTextColor : CommandRowTextColor;
+            var baseKindColor = entry.Kind == AliasKind.Macro ? MacroBaseColor : CommandBaseColor;
 
-            var editButtonColor = entry.Kind == AliasKind.Macro
-                ? new Vector4(0.76f, 0.85f, 0.93f, 0.70f)
-                : new Vector4(0.58f, 0.90f, 0.66f, 0.70f);
+            var rowColor = baseKindColor;
+            if (!string.IsNullOrWhiteSpace(category) && TryGetCategoryColor(category, out var catColor))
+                rowColor = new Vector4(catColor.X, catColor.Y, catColor.Z, 1f);
 
-            var editButtonHoverColor = entry.Kind == AliasKind.Macro
-                ? new Vector4(0.83f, 0.90f, 0.97f, 0.90f)
-                : new Vector4(0.66f, 0.94f, 0.73f, 0.90f);
-
-            var editButtonActiveColor = entry.Kind == AliasKind.Macro
-                ? new Vector4(0.89f, 0.94f, 0.99f, 0.90f)
-                : new Vector4(0.73f, 0.97f, 0.79f, 0.90f);
-
-            var deleteButtonColor = entry.Kind == AliasKind.Macro
-                ? new Vector4(0.70f, 0.80f, 0.89f, 0.70f)
-                : new Vector4(0.52f, 0.84f, 0.60f, 0.70f);
-
-            var deleteButtonHoverColor = entry.Kind == AliasKind.Macro
-                ? new Vector4(0.78f, 0.87f, 0.94f, 0.90f)
-                : new Vector4(0.60f, 0.90f, 0.68f, 0.90f);
-
-            var deleteButtonActiveColor = entry.Kind == AliasKind.Macro
-                ? new Vector4(0.85f, 0.92f, 0.98f, 0.90f)
-                : new Vector4(0.68f, 0.95f, 0.75f, 0.90f);
-
-            ImGui.TableNextRow(0, TableRowHeight);
+            ImGui.TableNextRow();
 
             ImGui.TableSetColumnIndex(0);
-            DrawCenteredCellText(entry.Number.ToString(), rowTextColor, TableRowHeight);
+            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.TextUnformatted(entry.Number.ToString());
+            ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(1);
-            DrawCenteredCellText(entry.Kind == AliasKind.Macro ? "Macro" : "Command", rowTextColor, TableRowHeight);
+            DrawRowStarButton_WithBorder(i, entry, rowColor);
 
             ImGui.TableSetColumnIndex(2);
-            DrawCenteredCellText(normalizedAlias, rowTextColor, TableRowHeight);
+            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.TextUnformatted(entry.Kind == AliasKind.Macro ? "Macro" : "Cmd");
+            ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(3);
-            DrawVerticallyCenteredWrappedCellText(normalizedCommand, rowTextColor, TableRowHeight);
+            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.TextUnformatted(category);
+            ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(4);
-            DrawCenteredButtonInCell("Edit", $"##edit{i}", new Vector2(64, 0), editButtonColor, editButtonHoverColor, editButtonActiveColor, TableRowHeight, () =>
+            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.TextUnformatted(alias);
+            ImGui.PopStyleColor();
+
+            ImGui.TableSetColumnIndex(5);
+            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            if (entry.Kind == AliasKind.Macro && (cmd.Contains(',') || cmd.Contains(';') || cmd.Contains("wait:", StringComparison.OrdinalIgnoreCase)))
+                ImGui.TextWrapped(cmd + "  [MacroSeq]");
+            else
+                ImGui.TextWrapped(cmd);
+            ImGui.PopStyleColor();
+
+            ImGui.TableSetColumnIndex(6);
+            DrawRowButtonColoredKeepText($"Edit##edit{i}", rowColor, () =>
             {
                 if (entry.Kind == AliasKind.Macro)
                 {
-                    macroAliasInput = normalizedAlias.TrimStart('/');
-                    macroCommandInput = normalizedCommand;
+                    macroAliasInput = alias.TrimStart('/');
+                    macroCommandInput = cmd;
+                    macroCategoryInput = category;
+                    macroPinned = entry.Pinned;
+                    if (TryGetCategoryColor(category, out var c)) macroCategoryColor = c;
                 }
                 else
                 {
-                    commandAliasInput = normalizedAlias.TrimStart('/');
-                    commandCommandInput = normalizedCommand;
+                    commandAliasInput = alias.TrimStart('/');
+                    commandCommandInput = cmd;
+                    commandCategoryInput = category;
+                    commandPinned = entry.Pinned;
+                    if (TryGetCategoryColor(category, out var c)) commandCategoryColor = c;
                 }
             });
 
-            ImGui.TableSetColumnIndex(5);
-            DrawCenteredButtonInCell("Delete", $"##delete{i}", new Vector2(64, 0), deleteButtonColor, deleteButtonHoverColor, deleteButtonActiveColor, TableRowHeight, () =>
+            if (ImGui.BeginPopupContextItem($"ctx_edit{i}"))
             {
-                plugin.DeleteAlias(normalizedAlias);
-            });
+                if (ImGui.MenuItem("Test"))
+                    plugin.TestAlias(alias, out _);
+
+                if (ImGui.MenuItem("Duplicate"))
+                {
+                    if (plugin.DuplicateAlias(alias, out var msg))
+                        Plugin.ChatGui.Print(msg, "CreateXIV");
+                    else
+                        Plugin.ChatGui.PrintError(msg, "CreateXIV");
+                }
+
+                ImGui.EndPopup();
+            }
+
+            ImGui.TableSetColumnIndex(7);
+            DrawRowButtonColoredKeepText($"Del##del{i}", rowColor, () => plugin.DeleteAlias(alias));
         }
 
         ImGui.EndTable();
     }
 
-    private void DrawCustomHeaderRow()
+    private void DrawRowStarButton_WithBorder(int i, AliasEntry entry, Vector4 rowColor)
     {
-        ImGui.TableNextRow(ImGuiTableRowFlags.Headers, HeaderRowHeight);
+        var btn = new Vector4(rowColor.X * 0.30f, rowColor.Y * 0.30f, rowColor.Z * 0.30f, 1f);
+        var hover = new Vector4(rowColor.X * 0.40f, rowColor.Y * 0.40f, rowColor.Z * 0.40f, 1f);
+        var active = new Vector4(rowColor.X * 0.50f, rowColor.Y * 0.50f, rowColor.Z * 0.50f, 1f);
 
-        DrawHeaderCell(0, "N°");
-        DrawHeaderCell(1, "Type");
-        DrawHeaderCell(2, "Alias");
-        DrawHeaderCell(3, "Command");
-        DrawHeaderCell(4, "Edit");
-        DrawHeaderCell(5, "Delete");
-    }
+        var borderCol = entry.Pinned ? PinYellow : BorderWhite;
+        var textCol = entry.Pinned ? PinYellow : TooltipText;
 
-    private void DrawHeaderCell(int columnIndex, string text)
-    {
-        ImGui.TableSetColumnIndex(columnIndex);
-        DrawCenteredBoldCellText(text, HeaderText, HeaderRowHeight);
-    }
-
-    private void DrawCenteredCellText(string text, Vector4 color, float rowHeight)
-    {
-        var region = ImGui.GetContentRegionAvail().X;
-        var size = ImGui.CalcTextSize(text);
-        var offsetX = MathF.Max(0f, (region - size.X) * 0.5f);
-        var offsetY = MathF.Max(0f, (rowHeight - size.Y) * 0.5f - 2f);
-
-        if (offsetX > 0f)
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
-        if (offsetY > 0f)
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-
-        ImGui.PushStyleColor(ImGuiCol.Text, color);
-        ImGui.TextUnformatted(text);
-        ImGui.PopStyleColor();
-    }
-
-    private void DrawVerticallyCenteredWrappedCellText(string text, Vector4 color, float rowHeight)
-    {
-        var size = ImGui.CalcTextSize(text);
-        var offsetY = MathF.Max(0f, (rowHeight - size.Y) * 0.5f - 2f);
-
-        if (offsetY > 0f)
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-
-        ImGui.PushStyleColor(ImGuiCol.Text, color);
-        ImGui.TextWrapped(text);
-        ImGui.PopStyleColor();
-    }
-
-    private void DrawCenteredBoldCellText(string text, Vector4 color, float rowHeight)
-    {
-        var region = ImGui.GetContentRegionAvail().X;
-        var size = ImGui.CalcTextSize(text) + new Vector2(1f, 0f);
-        var offsetX = MathF.Max(0f, (region - size.X) * 0.5f);
-        var offsetY = MathF.Max(0f, (rowHeight - size.Y) * 0.5f - 2f);
-
-        if (offsetX > 0f)
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
-        if (offsetY > 0f)
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-
-        DrawBoldText(text, color);
-    }
-
-    private void DrawCenteredBoldText(string text, Vector4 color)
-    {
-        var region = ImGui.GetContentRegionAvail().X;
-        var size = ImGui.CalcTextSize(text) + new Vector2(1f, 0f);
-        var offsetX = MathF.Max(0f, (region - size.X) * 0.5f);
-        if (offsetX > 0f)
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
-
-        DrawBoldText(text, color);
-    }
-
-    private void DrawCenteredButtonInCell(
-        string text,
-        string id,
-        Vector2 size,
-        Vector4 buttonColor,
-        Vector4 hoverColor,
-        Vector4 activeColor,
-        float rowHeight,
-        Action onClick)
-    {
-        var region = ImGui.GetContentRegionAvail().X;
-        var buttonHeight = size.Y > 0 ? size.Y : (ImGui.GetTextLineHeight() + ImGui.GetStyle().FramePadding.Y * 2f);
-        var offsetX = MathF.Max(0f, (region - size.X) * 0.5f);
-        var offsetY = MathF.Max(0f, (rowHeight - buttonHeight) * 0.5f - 1f);
-
-        if (offsetX > 0f)
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offsetX);
-        if (offsetY > 0f)
-            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + offsetY);
-
-        ImGui.PushStyleColor(ImGuiCol.Button, buttonColor);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverColor);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, activeColor);
-
-        if (DrawBoldButton(text, id, size))
-            onClick();
-
-        ImGui.PopStyleColor(3);
-    }
-
-    private void SaveMacroAlias()
-    {
-        if (plugin.AddOrUpdateMacroAlias(macroAliasInput, macroCommandInput, out var message))
-        {
-            Plugin.ChatGui.Print(message, "Creator");
-            macroAliasInput = string.Empty;
-            macroCommandInput = string.Empty;
-        }
-        else
-        {
-            Plugin.ChatGui.PrintError(message, "Creator");
-        }
-    }
-
-    private void SavePluginAlias()
-    {
-        if (plugin.AddOrUpdateCommandAlias(commandAliasInput, commandCommandInput, out var message))
-        {
-            Plugin.ChatGui.Print(message, "Creator");
-            commandAliasInput = string.Empty;
-            commandCommandInput = string.Empty;
-        }
-        else
-        {
-            Plugin.ChatGui.PrintError(message, "Creator");
-        }
-    }
-
-    private void PushVanillaPastelStyle()
-    {
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.20f, 0.18f, 0.22f, 0.98f));
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, new Vector4(0.49f, 0.43f, 0.54f, 0.85f));
-        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, new Vector4(0.56f, 0.49f, 0.61f, 0.92f));
-        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, new Vector4(0.62f, 0.55f, 0.67f, 1.00f));
-        ImGui.PushStyleColor(ImGuiCol.Border, PanelBorder);
-        ImGui.PushStyleColor(ImGuiCol.Separator, new Vector4(0.68f, 0.60f, 0.73f, 0.80f));
-        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, new Vector4(0.77f, 0.69f, 0.81f, 0.90f));
-        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, new Vector4(0.85f, 0.77f, 0.88f, 1.00f));
-
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 6f);
+        ImGui.PushStyleColor(ImGuiCol.Button, btn);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, active);
+        ImGui.PushStyleColor(ImGuiCol.Text, textCol);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(6f, 4f));
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4f);
-        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 4f);
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(8f, 5f));
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(8f, 7f));
-    }
+        
 
-    private void PopVanillaPastelStyle()
-    {
-        ImGui.PopStyleVar(5);
-        ImGui.PopStyleColor(8);
-    }
-
-    private void PushVanillaButtonStyle()
-    {
-        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.58f, 0.90f, 0.66f, 0.80f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.66f, 0.94f, 0.73f, 0.80f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.73f, 0.97f, 0.79f, 0.80f));
-    }
-
-    private void PushSecondaryButtonStyle()
-    {
-        ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.62f, 0.70f, 0.78f, 0.80f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.70f, 0.78f, 0.85f, 0.80f));
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.78f, 0.84f, 0.90f, 0.80f));
-    }
-
-    private void DrawBoldText(string text, Vector4 color)
-    {
-        ImGui.PushStyleColor(ImGuiCol.Text, color);
-        DrawPseudoBoldText(text);
-        ImGui.PopStyleColor();
-    }
-
-    private void DrawBoldShadowText(string text, Vector4 color)
-    {
-        ImGui.PushStyleColor(ImGuiCol.Text, color);
-        DrawPseudoBoldShadowText(text);
-        ImGui.PopStyleColor();
-    }
-
-    private void DrawPseudoBoldText(string text)
-    {
-        var drawList = ImGui.GetWindowDrawList();
-        var pos = ImGui.GetCursorScreenPos();
-        var col = ImGui.GetColorU32(ImGuiCol.Text);
-
-        drawList.AddText(pos, col, text);
-        drawList.AddText(pos + new Vector2(1f, 0f), col, text);
-
-        var size = ImGui.CalcTextSize(text);
-        ImGui.Dummy(size + new Vector2(1f, 0f));
-    }
-
-    private void DrawPseudoBoldShadowText(string text)
-    {
-        var drawList = ImGui.GetWindowDrawList();
-        var pos = ImGui.GetCursorScreenPos();
-        var col = ImGui.GetColorU32(ImGuiCol.Text);
-        var shadowCol = ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 1f));
-
-        drawList.AddText(pos + new Vector2(1f, 1f), shadowCol, text);
-        drawList.AddText(pos + new Vector2(-1f, 0f), shadowCol, text);
-        drawList.AddText(pos + new Vector2(1f, 0f), shadowCol, text);
-        drawList.AddText(pos + new Vector2(0f, -1f), shadowCol, text);
-        drawList.AddText(pos + new Vector2(0f, 1f), shadowCol, text);
-
-        drawList.AddText(pos, col, text);
-        drawList.AddText(pos + new Vector2(1f, 0f), col, text);
-
-        var size = ImGui.CalcTextSize(text);
-        ImGui.Dummy(size + new Vector2(1f, 0f));
-    }
-
-    private bool DrawBoldButton(string visibleText, string id, Vector2 size)
-    {
-        if (size == Vector2.Zero)
+        if (ImGui.Button($"★##pinRow{i}", new Vector2(26f, 0f)))
         {
-            var textSize = ImGui.CalcTextSize(visibleText);
-            var framePadding = ImGui.GetStyle().FramePadding;
-            size = new Vector2(textSize.X + framePadding.X * 2f + 6f, textSize.Y + framePadding.Y * 2f);
+            entry.Pinned = !entry.Pinned;
+            plugin.Configuration.Save();
         }
 
-        var pressed = ImGui.Button(id, size);
+        // Manual border (white or yellow)
+        var drawList = ImGui.GetWindowDrawList();
         var min = ImGui.GetItemRectMin();
         var max = ImGui.GetItemRectMax();
-        var textSize2 = ImGui.CalcTextSize(visibleText);
+        float thickness = 1.2f;            // <-- BORDA
+        float rounding = 4f;
 
-        var textPos = new Vector2(
-            min.X + ((max.X - min.X) - textSize2.X) * 0.5f,
-            min.Y + ((max.Y - min.Y) - textSize2.Y) * 0.5f);
+        var half = thickness * 0.5f;
 
-        var drawList = ImGui.GetWindowDrawList();
-        var textCol = ImGui.GetColorU32(ImGuiCol.Text);
-        var shadowCol = ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 1f));
+        // expande o retângulo para não clipar o “lado de fora” da borda
+        var pMin = min - new Vector2(half, half);
+        var pMax = max + new Vector2(half, half);
 
-        drawList.AddText(textPos + new Vector2(1f, 1f), shadowCol, visibleText);
-        drawList.AddText(textPos + new Vector2(-1f, 0f), shadowCol, visibleText);
-        drawList.AddText(textPos + new Vector2(1f, 0f), shadowCol, visibleText);
-        drawList.AddText(textPos + new Vector2(0f, -1f), shadowCol, visibleText);
-        drawList.AddText(textPos + new Vector2(0f, 1f), shadowCol, visibleText);
+        drawList.AddRect(pMin, pMax, ImGui.GetColorU32(borderCol), rounding, ImDrawFlags.RoundCornersAll, thickness);
 
-        drawList.AddText(textPos, textCol, visibleText);
-        drawList.AddText(textPos + new Vector2(1f, 0f), textCol, visibleText);
-
-        return pressed;
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor(4);
     }
 
-    private sealed class StyleColorScope : IDisposable
+    private void DrawRowButtonColoredKeepText(string label, Vector4 rowColor, Action onClick)
     {
-        private readonly int count;
+        var btn = new Vector4(rowColor.X * 0.65f, rowColor.Y * 0.65f, rowColor.Z * 0.65f, 1f);
+        var hover = new Vector4(MathF.Min(1f, rowColor.X * 0.80f), MathF.Min(1f, rowColor.Y * 0.80f), MathF.Min(1f, rowColor.Z * 0.80f), 1f);
+        var active = new Vector4(MathF.Min(1f, rowColor.X * 0.95f), MathF.Min(1f, rowColor.Y * 0.95f), MathF.Min(1f, rowColor.Z * 0.95f), 1f);
 
-        public StyleColorScope(params (ImGuiCol color, Vector4 value)[] colors)
-        {
-            count = colors.Length;
-            foreach (var (color, value) in colors)
-                ImGui.PushStyleColor(color, value);
-        }
+        ImGui.PushStyleColor(ImGuiCol.Button, btn);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, active);
 
-        public void Dispose()
-        {
-            ImGui.PopStyleColor(count);
-        }
+        ImGui.PushStyleColor(ImGuiCol.Text, TooltipText);
+
+        if (ImGui.Button(label))
+            onClick();
+
+        ImGui.PopStyleColor(4);
     }
+
+    // =========================================================
+    // Hex helpers
+    // =========================================================
+
+    private static string ToHexRgb(Vector4 v)
+    {
+        int r = (int)MathF.Round(Clamp01(v.X) * 255f);
+        int g = (int)MathF.Round(Clamp01(v.Y) * 255f);
+        int b = (int)MathF.Round(Clamp01(v.Z) * 255f);
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
+
+    private static bool TryParseHexRgb(string hex, out Vector4 v)
+    {
+        v = default;
+        if (string.IsNullOrWhiteSpace(hex))
+            return false;
+
+        hex = hex.Trim();
+        if (hex.StartsWith('#'))
+            hex = hex[1..];
+
+        if (hex.Length != 6)
+            return false;
+
+        if (!int.TryParse(hex.Substring(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r)) return false;
+        if (!int.TryParse(hex.Substring(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)) return false;
+        if (!int.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)) return false;
+
+        v = new Vector4(r / 255f, g / 255f, b / 255f, 1f);
+        return true;
+    }
+
+    private static float Clamp01(float x) => x < 0 ? 0 : (x > 1 ? 1 : x);
 }
