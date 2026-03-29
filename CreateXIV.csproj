@@ -1,4 +1,4 @@
-<Project Sdk="Dalamud.NET.Sdk/1.0.0">
+<Project Sdk="Dalamud.NET.Sdk/14.0.2">
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Platforms>x64</Platforms>
@@ -12,7 +12,7 @@
     <!-- Manifest fields (Packager lê daqui) -->
     <Author>Bryer</Author>
     <Name>CreateXIV</Name>
-    <Punchline>Create custom macro & plugin command aliases.</Punchline>
+    <Punchline>Create custom macro and plugin command aliases.</Punchline>
     <Description>Create vanilla-like macro aliases (macro/shared) and plugin command aliases via /create.</Description>
     <RepoUrl>https://github.com/seventity7/CreateXIV</RepoUrl>
 
