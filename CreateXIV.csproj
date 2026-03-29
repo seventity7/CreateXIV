@@ -1,26 +1,28 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Dalamud.NET.Sdk/14.0.2">
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Version>1.0.4</Version>
-    <PackageProjectUrl>https://github.com/seventity7/CreateXIV</PackageProjectUrl>
-    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
-    <IsPackable>false</IsPackable>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <Platforms>x64</Platforms>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <AssemblyName>CreateXIV</AssemblyName>
+    <RootNamespace>CreateXIV</RootNamespace>
+
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <Version>1.0.4</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ImGui.NET" Version="1.91.0.1" />
+    <PackageReference Include="DalamudPackager" Version="14.0.2" PrivateAssets="all" />
   </ItemGroup>
 
-    <ItemGroup>
-    <ContentWithTargetPath Include="Images\create.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>Images/create.png</TargetPath>
-    </ContentWithTargetPath>
+  <ItemGroup>
+    <PackageReference Include="FFXIVClientStructs" Version="*" />
   </ItemGroup>
 
 </Project>
