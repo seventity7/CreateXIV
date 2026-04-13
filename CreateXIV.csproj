@@ -19,7 +19,7 @@
     <!-- API atual do Dalamud -->
     <DalamudApiLevel>14</DalamudApiLevel>
 
-    <!-- Versão fixa (não timestamp) -->
-    <Version>1.0.5</Version>
+    <!-- Versão fixa/tag github (não timestamp) -->
+    <Version>1.0.6</Version>
   </PropertyGroup>
 </Project>
