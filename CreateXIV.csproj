@@ -20,6 +20,6 @@
     <DalamudApiLevel>14</DalamudApiLevel>
 
     <!-- Versão fixa (não timestamp) -->
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
   </PropertyGroup>
 </Project>

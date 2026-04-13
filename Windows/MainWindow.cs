@@ -189,18 +189,19 @@ public class MainWindow : Window, IDisposable
     {
         DrawTooltipHeader("°。How to use  °。");
         ImGui.TextUnformatted("・Type the command name on the field \"Alias\"");
-        ImGui.TextUnformatted("・Type the macro or macro sequence on the field \"Command\"");
+        ImGui.TextUnformatted("・Type exactly one macro on the field \"Command\"");
+        ImGui.TextUnformatted("・The format must be: macro:<number>");
         ImGui.Spacing();
 
         DrawTooltipHeader("°。Examples  °。");
         ImGui.TextUnformatted("・Alias: Test  Command: macro:1  |  /test will execute macro 1");
-        ImGui.TextUnformatted("・Alias: Geko  Command: macro:12, macro:20  |  /geko will execute macro 12 and then macro 20");
-        ImGui.TextUnformatted("・Alias: Bread  Command: macro:5, wait:3, macro:7  |  /bread will execute macro 5, wait 3 seconds and execute macro 7");
-        ImGui.TextUnformatted("・ Use \"share:XX\" instead of \"macro:XX\" if you want to use shared macros instead");
+        ImGui.TextUnformatted("・Alias: Geko  Command: macro:20  |  /geko will execute macro 20");
+        ImGui.TextUnformatted("・Alias: Bread  Command: macro:7  |  /bread will execute macro 7");
         ImGui.Spacing();
 
         DrawTooltipHeader("°。Usage  °。");
-        ImGui.TextUnformatted("・You can execute any existing macro from your game macro-list");
+        ImGui.TextUnformatted("・Only one macro is allowed per macro alias");
+        ImGui.TextUnformatted("・Macro sequences are not supported");
         ImGui.TextUnformatted("・Duplicate alias names will overwrite existing ones");
         ImGui.TextUnformatted("・Native game commands are supported through macros");
     }
@@ -275,6 +276,26 @@ public class MainWindow : Window, IDisposable
     // Input rows
     // =========================================================
 
+
+    private static bool IsValidSingleMacroCommand(string command)
+    {
+        var cmd = Plugin.NormalizeCommand(command);
+        if (string.IsNullOrWhiteSpace(cmd))
+            return false;
+
+        if (!cmd.StartsWith("macro:", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (cmd.Contains(',') || cmd.Contains(';') || cmd.Contains("\n") || cmd.Contains("\r"))
+            return false;
+
+        var value = cmd[6..].Trim();
+        if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var macroNumber))
+            return false;
+
+        return macroNumber <= 99;
+    }
+
     private void DrawAliasInputRow(
         ref string aliasValue,
         ref string commandValue,
@@ -335,6 +356,8 @@ public class MainWindow : Window, IDisposable
         if (string.Equals(aliasNorm, "/create", StringComparison.OrdinalIgnoreCase))
             ok = false;
         if (kind == AliasKind.Command && !cmdNorm.StartsWith('/'))
+            ok = false;
+        if (kind == AliasKind.Macro && !IsValidSingleMacroCommand(cmdNorm))
             ok = false;
 
         ImGui.SameLine(0f, 10f);
@@ -604,10 +627,7 @@ public class MainWindow : Window, IDisposable
 
             ImGui.TableSetColumnIndex(5);
             ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
-            if (entry.Kind == AliasKind.Macro && (cmd.Contains(',') || cmd.Contains(';') || cmd.Contains("wait:", StringComparison.OrdinalIgnoreCase)))
-                ImGui.TextWrapped(cmd + "  [MacroSeq]");
-            else
-                ImGui.TextWrapped(cmd);
+            ImGui.TextWrapped(cmd);
             ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(6);

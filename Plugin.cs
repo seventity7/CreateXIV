@@ -39,64 +39,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
     // ===== Cooldown tracking (Command aliases) =====
     private readonly Dictionary<string, DateTime> lastCommandExecUtc = new(StringComparer.OrdinalIgnoreCase);
 
-    // ===== Macro Sequence =====
-    private readonly Queue<MacroAction> macroQueue = new();
-    private bool macroSequenceActive = false;
-
-    private MacroSeqState macroState = MacroSeqState.Idle;
-    private int macroStateFrames = 0;
-    private DateTime waitUntilUtc = DateTime.MinValue;
-
-    private const int WaitForLockMaxFrames = 120;   // ~2s at 60fps
-    private const int WaitAfterExecuteFrames = 2;   // allow lock to engage
-
-    private enum MacroSeqState
-    {
-        Idle = 0,
-        WaitForLockToTurnOn = 1,
-        WaitForLockToTurnOff = 2,
-        WaitDelay = 3,
-    }
-
-    private enum MacroActionKind
-    {
-        Macro = 0,
-        WaitSeconds = 1,
-    }
-
-    private readonly struct MacroRef
-    {
-        public readonly bool Shared;
-        public readonly uint Number;
-
-        public MacroRef(bool shared, uint number)
-        {
-            Shared = shared;
-            Number = number;
-        }
-    }
-
-    private readonly struct MacroAction
-    {
-        public readonly MacroActionKind Kind;
-        public readonly MacroRef Macro;
-        public readonly double Seconds;
-
-        public MacroAction(MacroRef macro)
-        {
-            Kind = MacroActionKind.Macro;
-            Macro = macro;
-            Seconds = 0;
-        }
-
-        public MacroAction(double seconds)
-        {
-            Kind = MacroActionKind.WaitSeconds;
-            Seconds = seconds;
-            Macro = default;
-        }
-    }
-
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -120,14 +62,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
-        Framework.Update += OnFrameworkUpdate;
 
         Log.Information($"=== {PluginInterface.Manifest.Name} loaded ===");
     }
 
     public void Dispose()
     {
-        Framework.Update -= OnFrameworkUpdate;
 
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
@@ -377,10 +317,10 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
         }
 
-        // Macro: supports sequences (macro/shared/wait)
-        if (kind == AliasKind.Macro && !TryParseMacroActionSequence(normalizedCommand, out _))
+        // Macro: only one in-game macro is allowed
+        if (kind == AliasKind.Macro && !TryParseSingleMacroReference(normalizedCommand, out _))
         {
-            message = "Macro aliases must use macro:## or shared:##. You can chain multiple using commas and also use wait:seconds. Example: macro:47, wait:2, macro:48";
+            message = "Macro aliases must use exactly one macro in the format macro:##. Example: macro:47";
             return false;
         }
 
@@ -466,9 +406,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         if (entry.Kind == AliasKind.Macro)
         {
-            if (!TryParseMacroActionSequence(cmd, out _))
+            if (!TryParseSingleMacroReference(cmd, out _))
             {
-                message = "Invalid macro sequence.";
+                message = "Invalid macro format. Use macro:## only.";
                 return false;
             }
         }
@@ -765,7 +705,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     }
 
     // =========================
-    // Macro Mode (Sequence)
+    // Macro Mode
     // =========================
 
     private void ExecuteMacroAlias(AliasEntry entry)
@@ -773,191 +713,46 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var alias = NormalizeAlias(entry.Alias);
         var commandToRun = NormalizeCommand(entry.Command);
 
-        if (!TryParseMacroActionSequence(commandToRun, out var actions))
+        if (!TryParseSingleMacroReference(commandToRun, out var macroNumber))
         {
-            ChatGui.PrintError($"Alias {alias} has an invalid macro sequence.", "CreateXIV");
+            ChatGui.PrintError($"Alias {alias} must use exactly one macro in the format macro:##.", "CreateXIV");
             return;
         }
 
-        StartMacroSequence(actions);
-    }
-
-    private void StartMacroSequence(List<MacroAction> actions)
-    {
-        macroQueue.Clear();
-        foreach (var a in actions)
-            macroQueue.Enqueue(a);
-
-        macroSequenceActive = true;
-        macroState = MacroSeqState.Idle;
-        macroStateFrames = 0;
-        waitUntilUtc = DateTime.MinValue;
-
-        TryRunNextMacroAction();
-    }
-
-    private void OnFrameworkUpdate(IFramework _)
-    {
-        if (!macroSequenceActive)
-            return;
-
-        var shell = RaptureShellModule.Instance();
-        if (shell == null)
-            return;
-
-        switch (macroState)
-        {
-            case MacroSeqState.WaitDelay:
-            {
-                if (DateTime.UtcNow < waitUntilUtc)
-                    return;
-
-                macroState = MacroSeqState.Idle;
-                macroStateFrames = 0;
-                TryRunNextMacroAction();
-                return;
-            }
-
-            case MacroSeqState.WaitForLockToTurnOn:
-            {
-                macroStateFrames++;
-
-                if (macroStateFrames <= WaitAfterExecuteFrames)
-                    return;
-
-                if (shell->MacroLocked)
-                {
-                    macroState = MacroSeqState.WaitForLockToTurnOff;
-                    macroStateFrames = 0;
-                    return;
-                }
-
-                if (macroStateFrames >= WaitForLockMaxFrames)
-                {
-                    // fallback: assume "started" and wait for it to unlock
-                    macroState = MacroSeqState.WaitForLockToTurnOff;
-                    macroStateFrames = 0;
-                }
-                return;
-            }
-
-            case MacroSeqState.WaitForLockToTurnOff:
-            {
-                if (shell->MacroLocked)
-                    return;
-
-                macroState = MacroSeqState.Idle;
-                macroStateFrames = 0;
-                TryRunNextMacroAction();
-                return;
-            }
-
-            default:
-                return;
-        }
-    }
-
-    private void TryRunNextMacroAction()
-    {
-        if (macroQueue.Count == 0)
-        {
-            macroSequenceActive = false;
-            macroState = MacroSeqState.Idle;
-            macroStateFrames = 0;
-            waitUntilUtc = DateTime.MinValue;
-            return;
-        }
-
-        var next = macroQueue.Dequeue();
-
-        if (next.Kind == MacroActionKind.WaitSeconds)
-        {
-            var seconds = Math.Max(0, next.Seconds);
-            waitUntilUtc = DateTime.UtcNow.AddSeconds(seconds);
-            macroState = MacroSeqState.WaitDelay;
-            macroStateFrames = 0;
-            return;
-        }
-
-        // Macro execution
         try
         {
             var macroModule = RaptureMacroModule.Instance();
             if (macroModule == null)
             {
                 ChatGui.PrintError("Macro module was not available.", "CreateXIV");
-                macroQueue.Clear();
-                macroSequenceActive = false;
-                macroState = MacroSeqState.Idle;
                 return;
             }
 
-            var macro = macroModule->GetMacro(next.Macro.Shared ? 1u : 0u, next.Macro.Number);
+            var macro = macroModule->GetMacro(0u, macroNumber);
             if (macro == null)
             {
-                ChatGui.PrintError($"Macro {(next.Macro.Shared ? "shared" : "individual")} {next.Macro.Number} was not found.", "CreateXIV");
-                macroQueue.Clear();
-                macroSequenceActive = false;
-                macroState = MacroSeqState.Idle;
+                ChatGui.PrintError($"Macro {macroNumber} was not found.", "CreateXIV");
                 return;
             }
 
-            // IMPORTANT: do not force MacroLocked = false
-            RaptureShellModule.Instance()->ExecuteMacro(macro);
+            var shell = RaptureShellModule.Instance();
+            if (shell == null)
+            {
+                ChatGui.PrintError("Shell module was not available.", "CreateXIV");
+                return;
+            }
 
-            macroState = MacroSeqState.WaitForLockToTurnOn;
-            macroStateFrames = 0;
+            shell->ExecuteMacro(macro);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to execute macro sequence.");
-            ChatGui.PrintError("Failed to execute macro sequence.", "CreateXIV");
-            macroQueue.Clear();
-            macroSequenceActive = false;
-            macroState = MacroSeqState.Idle;
-            macroStateFrames = 0;
+            Log.Error(ex, "Failed to execute macro alias.");
+            ChatGui.PrintError("Failed to execute macro alias.", "CreateXIV");
         }
     }
 
-    private static bool TryParseMacroActionSequence(string command, out List<MacroAction> actions)
+    private static bool TryParseSingleMacroReference(string command, out uint macroNumber)
     {
-        actions = new List<MacroAction>();
-        if (string.IsNullOrWhiteSpace(command))
-            return false;
-
-        // Accept separators: , ; newline
-        var parts = command.Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var raw in parts)
-        {
-            var part = raw.Trim();
-            if (string.IsNullOrWhiteSpace(part))
-                continue;
-
-            // wait:2.5
-            if (part.StartsWith("wait:", StringComparison.OrdinalIgnoreCase))
-            {
-                var v = part[5..].Trim();
-                if (!double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
-                    return false;
-
-                if (seconds < 0) seconds = 0;
-                actions.Add(new MacroAction(seconds));
-                continue;
-            }
-
-            if (!TryParseSingleMacroReference(part, out var shared, out var macroNumber))
-                return false;
-
-            actions.Add(new MacroAction(new MacroRef(shared, macroNumber)));
-        }
-
-        return actions.Count > 0;
-    }
-
-    private static bool TryParseSingleMacroReference(string command, out bool shared, out uint macroNumber)
-    {
-        shared = false;
         macroNumber = 0;
 
         if (string.IsNullOrWhiteSpace(command))
@@ -965,26 +760,18 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         var trimmed = command.Trim();
 
-        if (trimmed.StartsWith("macro:", StringComparison.OrdinalIgnoreCase))
-        {
-            var value = trimmed[6..].Trim();
-            if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out macroNumber) || macroNumber > 99)
-                return false;
+        if (!trimmed.StartsWith("macro:", StringComparison.OrdinalIgnoreCase))
+            return false;
 
-            shared = false;
-            return true;
-        }
+        if (trimmed.Contains(',') || trimmed.Contains(';') || trimmed.Contains("\n") || trimmed.Contains("\r"))
+            return false;
 
-        if (trimmed.StartsWith("shared:", StringComparison.OrdinalIgnoreCase))
-        {
-            var value = trimmed[7..].Trim();
-            if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out macroNumber) || macroNumber > 99)
-                return false;
+        var value = trimmed[6..].Trim();
 
-            shared = true;
-            return true;
-        }
+        if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out macroNumber))
+            return false;
 
-        return false;
+        return macroNumber <= 99;
     }
+
 }
