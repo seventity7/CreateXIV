@@ -13,7 +13,7 @@ It combines the flexibility of macros with the power of plugin commands, all thr
 - 🔹 Create custom **slash command aliases**
 - 🔹 Support for:
   - Macro-based aliases (`macro:##`, `shared:##`)
-  - Plugin commands (e.g. `/lifestream`, `/something`)
+  - Plugin commands (e.g. `/teste`, `/something`)
 - 🔹 Fully in-game UI (`/create`)
 - 🔹 Automatic alias saving and persistence
 - 🔹 Overwrite existing aliases safely
@@ -49,8 +49,8 @@ It combines the flexibility of macros with the power of plugin commands, all thr
 CreateXIV allows you to define:
 
 Alias → Command
-Example: Alias: `Golem` - Command: `/lifestream Dynamis Golem`
-Type `/Golem` in chat and `/lifestream Dynamis Golem` will be executed.
+Example: Alias: `Golem` - Command: `/Example Dynamis Golem`
+Type `/Golem` in chat and `/Example Dynamis Golem` will be executed.
 <img width="1025" height="100" alt="c2" src="https://github.com/user-attachments/assets/cc17257a-23fc-41ea-b2e2-a2ebb9cdb0b9" />
 
 
