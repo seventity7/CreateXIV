@@ -216,8 +216,8 @@ public class MainWindow : Window, IDisposable
         ImGui.Spacing();
 
         DrawTooltipHeader("°。Examples  °。");
-        ImGui.TextUnformatted("・Alias: Test  Command: /lifestream golem  |  /test will execute \"/lifestream golem\".");
-        DrawTooltipItalicNote("(Lifestream plugin)");
+        ImGui.TextUnformatted("・Alias: Test  Command: /Example golem  |  /test will execute \"/Example golem\".");
+        DrawTooltipItalicNote("(Example plugin)");
         ImGui.TextUnformatted("・Alias: PCT  Command: /barload pct  |  /pct will execute \"/barload pct\".");
         DrawTooltipItalicNote("(Bartender plugin)");
         ImGui.TextUnformatted("・Alias: RPGraph  Command: /gload rpgraphics  |  /RPGraphic will execute \"/gload rpgraphics\".");
