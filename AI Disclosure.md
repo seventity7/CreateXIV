@@ -16,7 +16,7 @@ AI assistance was used for tasks including, but not limited to:
 - Assisting with repetitive works
 - Helping identify likely causes of logic issues
 
-AI assistance was **not** used as an autonomous substitute for authorship. All generated output was reviewed, selectively accepted, modified or rejected by the me(Bryer), before inclusion.
+AI assistance was **not** used as an autonomous substitute for authorship. All generated output was reviewed, selectively accepted, modified or rejected by me(Bryer), before inclusion.
 
 ## Human Responsibility and Review
 
