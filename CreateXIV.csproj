@@ -1,6 +1,7 @@
-<Project Sdk="Dalamud.NET.Sdk/14.0.2">
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Platforms>x64</Platforms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -17,9 +18,9 @@
     <RepoUrl>https://github.com/seventity7/CreateXIV</RepoUrl>
 
     <!-- API atual do Dalamud -->
-    <DalamudApiLevel>14</DalamudApiLevel>
+    <DalamudApiLevel>15</DalamudApiLevel>
 
     <!-- Versão fixa/tag github (não timestamp) -->
-    <Version>1.0.6.1</Version>
+    <Version>1.0.6.2</Version>
   </PropertyGroup>
 </Project>
