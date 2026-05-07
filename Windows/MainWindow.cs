@@ -226,7 +226,7 @@ public class MainWindow : Window, IDisposable
 
         DrawTooltipHeader("°。Usage  °。");
         ImGui.TextUnformatted("・You can execute any command from any plugin");
-        ImGui.TextUnformatted("・You can't execute native game commands (Ex: /echo, /tell)");
+        ImGui.TextUnformatted("・You can also execute any existing commands from the game itself");
         ImGui.TextUnformatted("・You can't make a '/create' command or relatives");
         ImGui.TextUnformatted("・Duplicate alias names will overwrite existing ones");
     }
@@ -689,7 +689,7 @@ public class MainWindow : Window, IDisposable
         ImGui.PushStyleColor(ImGuiCol.Text, textCol);
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(6f, 4f));
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4f);
-        
+
 
         if (ImGui.Button($"★##pinRow{i}", new Vector2(26f, 0f)))
         {

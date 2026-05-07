@@ -13,13 +13,13 @@
     <Author>Bryer</Author>
     <Name>CreateXIV</Name>
     <Punchline>Create custom macro and plugin command aliases.</Punchline>
-    <Description>Create vanilla-like macro aliases (macro/shared) and plugin command aliases via /create.</Description>
+    <Description>Lets players create custom slash command aliases from an in-game UI.</Description>
     <RepoUrl>https://github.com/seventity7/CreateXIV</RepoUrl>
 
     <!-- API atual do Dalamud -->
     <DalamudApiLevel>15</DalamudApiLevel>
 
-    <!-- Versão fixa/tag github (não timestamp) -->
-    <Version>1.0.6.2</Version>
+    <!-- Versão fixa/tag github -->
+    <Version>1.0.6.3</Version>
   </PropertyGroup>
 </Project>

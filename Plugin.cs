@@ -4,6 +4,8 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using CreateXIV.Windows;
+using FFXIVClientStructs.FFXIV.Client.System.String;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
 using System;
@@ -62,13 +64,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
-
         Log.Information($"=== {PluginInterface.Manifest.Name} loaded ===");
     }
 
     public void Dispose()
     {
-
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
@@ -88,6 +88,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     }
 
     public void ToggleConfigUi() => ConfigWindow.Toggle();
+
     public void ToggleMainUi() => MainWindow.Toggle();
 
     // =====================
@@ -130,6 +131,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         var restored = deletedStack.Pop();
+
         // re-number to end
         restored.Number = GetNextAliasNumber();
         restored.Alias = NormalizeAlias(restored.Alias);
@@ -156,6 +158,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public bool DuplicateAlias(string aliasInput, out string message)
     {
         var normalizedAlias = NormalizeAlias(aliasInput);
+
         var existing = Configuration.Aliases.FirstOrDefault(x =>
             string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
 
@@ -169,11 +172,14 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var baseName = existing.Alias.TrimStart('/');
         var newAlias = "/" + baseName + "_copy";
         var n = 1;
+
         while (Configuration.Aliases.Any(a => string.Equals(NormalizeAlias(a.Alias), NormalizeAlias(newAlias), StringComparison.OrdinalIgnoreCase)))
         {
             n++;
             newAlias = "/" + baseName + "_copy" + n;
-            if (n > 9999) break;
+
+            if (n > 9999)
+                break;
         }
 
         var copy = CloneEntry(existing);
@@ -234,6 +240,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         try
         {
             var imported = JsonSerializer.Deserialize<List<AliasEntry>>(json);
+
             if (imported == null || imported.Count == 0)
             {
                 message = "Nothing to import.";
@@ -248,6 +255,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
             // Normalize + re-number safely
             Configuration.NextAliasNumber = 1;
+
             foreach (var a in Configuration.Aliases)
                 a.Number = 0;
 
@@ -308,7 +316,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
         }
 
-        // Security: prevent alias-to-alias chaining/loops (simple but effective)
+        // Security: prevent alias-to-alias chaining/loops
         // If the command starts with "/" and matches ANY of our aliases, block it.
         if (normalizedCommand.StartsWith('/') &&
             Configuration.Aliases.Any(a => string.Equals(NormalizeAlias(a.Alias), NormalizeAlias(normalizedCommand.Split(' ', '\t')[0]), StringComparison.OrdinalIgnoreCase)))
@@ -496,11 +504,10 @@ public sealed unsafe class Plugin : IDalamudPlugin
             .ToList();
 
         foreach (var entry in orderedWithoutNumbers)
-        {
             entry.Number = GetNextAliasNumber();
-        }
 
         var highestNumber = Configuration.Aliases.Count == 0 ? 0 : Configuration.Aliases.Max(x => x.Number);
+
         if (highestNumber >= Configuration.NextAliasNumber)
             Configuration.NextAliasNumber = Math.Min(highestNumber + 1, 999);
 
@@ -617,10 +624,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private static IEnumerable<string> GetAliasVariants(string aliasInput)
     {
         var alias = NormalizeAlias(aliasInput);
+
         if (string.IsNullOrWhiteSpace(alias))
             yield break;
 
         var baseAlias = alias.TrimStart('/');
+
         if (string.IsNullOrWhiteSpace(baseAlias))
             yield break;
 
@@ -687,11 +696,13 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         // cooldown
         var cd = entry.CooldownMs > 0 ? entry.CooldownMs : Configuration.CommandCooldownMs;
+
         if (cd > 0)
         {
             if (lastCommandExecUtc.TryGetValue(alias, out var last))
             {
                 var diff = (DateTime.UtcNow - last).TotalMilliseconds;
+
                 if (diff < cd)
                     return; // silently ignore spam
             }
@@ -699,9 +710,43 @@ public sealed unsafe class Plugin : IDalamudPlugin
             lastCommandExecUtc[alias] = DateTime.UtcNow;
         }
 
-        var success = CommandManager.ProcessCommand(commandToRun);
-        if (!success)
-            ChatGui.PrintError($"Failed to execute plugin command: {commandToRun}", "CreateXIV");
+        if (CommandManager.ProcessCommand(commandToRun))
+            return;
+
+        if (ExecuteNativeGameCommand(commandToRun))
+            return;
+
+        ChatGui.PrintError($"Failed to execute command: {commandToRun}", "CreateXIV");
+    }
+
+    private static bool ExecuteNativeGameCommand(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command) || !command.StartsWith('/'))
+            return false;
+
+        var shell = RaptureShellModule.Instance();
+        var uiModule = UIModule.Instance();
+
+        if (shell == null || uiModule == null)
+            return false;
+
+        using var utf8Command = new Utf8String(command);
+
+        utf8Command.SanitizeString(
+            AllowedEntities.Unknown9 |
+            AllowedEntities.Payloads |
+            AllowedEntities.OtherCharacters |
+            AllowedEntities.SpecialCharacters |
+            AllowedEntities.Numbers |
+            AllowedEntities.LowercaseLetters |
+            AllowedEntities.UppercaseLetters
+        );
+
+        if (utf8Command.Length > 500)
+            return false;
+
+        shell->ExecuteCommandInner(&utf8Command, uiModule);
+        return true;
     }
 
     // =========================
@@ -722,6 +767,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         try
         {
             var macroModule = RaptureMacroModule.Instance();
+
             if (macroModule == null)
             {
                 ChatGui.PrintError("Macro module was not available.", "CreateXIV");
@@ -729,6 +775,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             }
 
             var macro = macroModule->GetMacro(0u, macroNumber);
+
             if (macro == null)
             {
                 ChatGui.PrintError($"Macro {macroNumber} was not found.", "CreateXIV");
@@ -736,6 +783,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             }
 
             var shell = RaptureShellModule.Instance();
+
             if (shell == null)
             {
                 ChatGui.PrintError("Shell module was not available.", "CreateXIV");
@@ -773,5 +821,4 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         return macroNumber <= 99;
     }
-
 }
