@@ -14,6 +14,7 @@ It combines the flexibility of macros with the power of plugin commands, all thr
 - 🔹 Support for:
   - Macro-based aliases (`macro:##`, `shared:##`)
   - Plugin commands (e.g. `/teste`, `/something`)
+  - Game commands (e.g. `/bread`, `/p Message`)
 - 🔹 Fully in-game UI (`/create`)
 - 🔹 Automatic alias saving and persistence
 - 🔹 Overwrite existing aliases safely
@@ -81,14 +82,12 @@ You can also Pin/Favorite it to make it appear always on top of the list._(Favor
 - ✅ ALWAYS use `/` in Command field for plugin commands  
 - ❌ You cannot create an alias named `create`  
 - ❌ You cannot point a command to `/create`  
-- ⚠️ Native FFXIV commands should be used via **Macro mode**  
 - 🔁 Duplicate alias names will overwrite existing ones
 
 ---
 
 ## 📌 Known Limitations
 
-- Native game commands require execution through macro alias
 - Alias execution depends on Dalamud command system (Plugins commands only)
 
 ---
@@ -100,7 +99,6 @@ You can also Pin/Favorite it to make it appear always on top of the list._(Favor
 - 🔹 Import/export system
 - 🔹 Auto-complete suggestions
 - 🔹 UI animations
-- 🔹 Support for native game commands without macro
 
 ---
 
