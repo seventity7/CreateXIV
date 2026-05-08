@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.Command;
+using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -328,7 +328,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         // Macro: only one in-game macro is allowed
         if (kind == AliasKind.Macro && !TryParseSingleMacroReference(normalizedCommand, out _))
         {
-            message = "Macro aliases must use exactly one macro in the format macro:##. Example: macro:47";
+            message = "Macro aliases must use exactly one macro reference: macro:## or shared:##. Example: shared:47";
             return false;
         }
 
@@ -416,7 +416,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             if (!TryParseSingleMacroReference(cmd, out _))
             {
-                message = "Invalid macro format. Use macro:## only.";
+                message = "Invalid macro format. Use macro:## or shared:## only.";
                 return false;
             }
         }
@@ -758,9 +758,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var alias = NormalizeAlias(entry.Alias);
         var commandToRun = NormalizeCommand(entry.Command);
 
-        if (!TryParseSingleMacroReference(commandToRun, out var macroNumber))
+        if (!TryParseSingleMacroReference(commandToRun, out var macroRef))
         {
-            ChatGui.PrintError($"Alias {alias} must use exactly one macro in the format macro:##.", "CreateXIV");
+            ChatGui.PrintError($"Alias {alias} must use exactly one macro reference: macro:## or shared:##.", "CreateXIV");
             return;
         }
 
@@ -774,11 +774,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 return;
             }
 
-            var macro = macroModule->GetMacro(0u, macroNumber);
+            var macro = macroModule->GetMacro(macroRef.Set, macroRef.Number);
 
             if (macro == null)
             {
-                ChatGui.PrintError($"Macro {macroNumber} was not found.", "CreateXIV");
+                ChatGui.PrintError($"{macroRef.DisplayName} was not found.", "CreateXIV");
                 return;
             }
 
@@ -799,26 +799,47 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
     }
 
-    private static bool TryParseSingleMacroReference(string command, out uint macroNumber)
+    private readonly record struct MacroReference(uint Set, uint Number, bool Shared)
     {
-        macroNumber = 0;
+        public string DisplayName => Shared ? $"Shared macro {Number}" : $"Macro {Number}";
+    }
+
+    private static bool TryParseSingleMacroReference(string command, out MacroReference macroRef)
+    {
+        macroRef = default;
 
         if (string.IsNullOrWhiteSpace(command))
             return false;
 
         var trimmed = command.Trim();
 
-        if (!trimmed.StartsWith("macro:", StringComparison.OrdinalIgnoreCase))
-            return false;
-
         if (trimmed.Contains(',') || trimmed.Contains(';') || trimmed.Contains("\n") || trimmed.Contains("\r"))
             return false;
 
-        var value = trimmed[6..].Trim();
+        var shared = false;
+        string value;
 
-        if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out macroNumber))
+        if (trimmed.StartsWith("macro:", StringComparison.OrdinalIgnoreCase))
+        {
+            value = trimmed[6..].Trim();
+        }
+        else if (trimmed.StartsWith("shared:", StringComparison.OrdinalIgnoreCase))
+        {
+            shared = true;
+            value = trimmed[7..].Trim();
+        }
+        else
+        {
+            return false;
+        }
+
+        if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var macroNumber))
             return false;
 
-        return macroNumber <= 99;
+        if (macroNumber > 99)
+            return false;
+
+        macroRef = new MacroReference(shared ? 1u : 0u, macroNumber, shared);
+        return true;
     }
 }

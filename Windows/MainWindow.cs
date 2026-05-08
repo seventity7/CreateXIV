@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -190,12 +190,12 @@ public class MainWindow : Window, IDisposable
         DrawTooltipHeader("°。How to use  °。");
         ImGui.TextUnformatted("・Type the command name on the field \"Alias\"");
         ImGui.TextUnformatted("・Type exactly one macro on the field \"Command\"");
-        ImGui.TextUnformatted("・The format must be: macro:<number>");
+        ImGui.TextUnformatted("・The format must be: macro:<number> or shared:<number>");
         ImGui.Spacing();
 
         DrawTooltipHeader("°。Examples  °。");
         ImGui.TextUnformatted("・Alias: Test  Command: macro:1  |  /test will execute macro 1");
-        ImGui.TextUnformatted("・Alias: Geko  Command: macro:20  |  /geko will execute macro 20");
+        ImGui.TextUnformatted("・Alias: Geko  Command: shared:20  |  /geko will execute shared macro 20");
         ImGui.TextUnformatted("・Alias: Bread  Command: macro:7  |  /bread will execute macro 7");
         ImGui.Spacing();
 
@@ -203,7 +203,7 @@ public class MainWindow : Window, IDisposable
         ImGui.TextUnformatted("・Only one macro is allowed per macro alias");
         ImGui.TextUnformatted("・Macro sequences are not supported");
         ImGui.TextUnformatted("・Duplicate alias names will overwrite existing ones");
-        ImGui.TextUnformatted("・Native game commands are supported through macros");
+        ImGui.TextUnformatted("・Use macro:## for personal macros or shared:## for shared macros");
     }
 
     private void DrawCommandTooltipContents()
@@ -283,13 +283,23 @@ public class MainWindow : Window, IDisposable
         if (string.IsNullOrWhiteSpace(cmd))
             return false;
 
-        if (!cmd.StartsWith("macro:", StringComparison.OrdinalIgnoreCase))
-            return false;
-
         if (cmd.Contains(',') || cmd.Contains(';') || cmd.Contains("\n") || cmd.Contains("\r"))
             return false;
 
-        var value = cmd[6..].Trim();
+        string value;
+        if (cmd.StartsWith("macro:", StringComparison.OrdinalIgnoreCase))
+        {
+            value = cmd[6..].Trim();
+        }
+        else if (cmd.StartsWith("shared:", StringComparison.OrdinalIgnoreCase))
+        {
+            value = cmd[7..].Trim();
+        }
+        else
+        {
+            return false;
+        }
+
         if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var macroNumber))
             return false;
 
