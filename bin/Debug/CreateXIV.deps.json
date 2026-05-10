@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "CreateXIV/1.0.6.4": {
+        "runtime": {
+          "CreateXIV.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "CreateXIV/1.0.6.4": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

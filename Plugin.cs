@@ -4,6 +4,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using CreateXIV.Windows;
+using CreateXIV.Services;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
@@ -90,6 +91,91 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public void ToggleConfigUi() => ConfigWindow.Toggle();
 
     public void ToggleMainUi() => MainWindow.Toggle();
+
+    internal IReadOnlyList<CommandSuggestion> GetCommandSuggestions(string query)
+        => CommandSuggestionService.GetCommandSuggestions(this, query);
+
+    internal IReadOnlyList<MacroSuggestion> GetMacroSuggestions(string query)
+        => CommandSuggestionService.GetMacroSuggestions(query);
+
+    internal bool IsAliasNameUsableForInput(string aliasInput)
+    {
+        var alias = NormalizeAlias(aliasInput);
+        if (string.IsNullOrWhiteSpace(alias) || alias.Length <= 1)
+            return false;
+
+        if (string.Equals(alias, CreateCommandName, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (CommandSuggestionService.IsKnownNativeCommand(alias))
+            return false;
+
+        if (!CommandManager.Commands.ContainsKey(alias))
+            return true;
+
+        return Configuration.Aliases.Any(a =>
+            string.Equals(NormalizeAlias(a.Alias), alias, StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal bool IsKnownCommandAvailable(string commandInput)
+    {
+        if (!TryGetCommandToken(commandInput, out var token))
+            return false;
+
+        if (IsCreateXivManagedCommand(token))
+            return false;
+
+        return CommandManager.Commands.ContainsKey(token) ||
+               CommandSuggestionService.IsKnownNativeCommand(token);
+    }
+
+    internal bool IsMacroReferenceAvailable(string commandInput)
+    {
+        if (!TryParseSingleMacroReference(commandInput, out var macroRef))
+            return false;
+
+        return CommandSuggestionService.IsMacroAvailable(macroRef.Set, macroRef.Number);
+    }
+
+    internal bool IsCreateXivManagedCommand(string commandInput)
+    {
+        if (!TryGetCommandToken(commandInput, out var token))
+            return false;
+
+        if (string.Equals(token, CreateCommandName, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return Configuration.Aliases.Any(a =>
+            string.Equals(NormalizeAlias(a.Alias), token, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static bool TryGetCommandToken(string commandInput, out string token)
+    {
+        token = string.Empty;
+
+        var command = NormalizeCommand(commandInput);
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+
+        if (!command.StartsWith('/'))
+            command = "/" + command;
+
+        var split = command.Split([' ', '\t'], 2, StringSplitOptions.RemoveEmptyEntries);
+        if (split.Length == 0)
+            return false;
+
+        token = NormalizeAlias(split[0]);
+        return token.Length > 1;
+    }
+
+    private static string EnsureSlashCommand(string commandInput)
+    {
+        var command = NormalizeCommand(commandInput);
+        if (string.IsNullOrWhiteSpace(command))
+            return string.Empty;
+
+        return command.StartsWith('/') ? command : "/" + command;
+    }
 
     // =====================
     // Public helpers for UI
@@ -282,7 +368,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     private bool AddOrUpdateAliasInternal(string aliasInput, string commandInput, string category, bool pinned, AliasKind kind, out string message)
     {
         var normalizedAlias = NormalizeAlias(aliasInput);
-        var normalizedCommand = NormalizeCommand(commandInput);
+        var normalizedCommand = kind == AliasKind.Command ? EnsureSlashCommand(commandInput) : NormalizeCommand(commandInput);
 
         if (string.IsNullOrWhiteSpace(normalizedAlias))
         {
@@ -332,15 +418,20 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
         }
 
-        // Command: must start with slash
-        if (kind == AliasKind.Command && !normalizedCommand.StartsWith('/'))
+        if (kind == AliasKind.Command && !IsKnownCommandAvailable(normalizedCommand))
         {
-            message = "Plugin commands should start with /. Example: /li Mist w18 p15";
+            message = "Command was not found in the active command list or the native game command list.";
             return false;
         }
 
         var existing = Configuration.Aliases.FirstOrDefault(x =>
             string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
+
+        if (existing == null && (CommandManager.Commands.ContainsKey(normalizedAlias) || CommandSuggestionService.IsKnownNativeCommand(normalizedAlias)))
+        {
+            message = $"Alias {normalizedAlias} conflicts with an existing command.";
+            return false;
+        }
 
         if (existing != null)
         {
@@ -422,9 +513,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
         else
         {
-            if (!cmd.StartsWith('/'))
+            if (!IsKnownCommandAvailable(cmd))
             {
-                message = "Command aliases must start with /.";
+                message = "Command was not found in the active command list or the native game command list.";
                 return false;
             }
         }

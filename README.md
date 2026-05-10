@@ -1,4 +1,4 @@
-`Most recent update: 1.0.6.4 - May 08 2026`
+`Most recent update: 1.0.6.5 - May 09 2026`
 
 # 🛠️ CreateXIV
 

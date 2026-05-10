@@ -20,6 +20,6 @@
     <DalamudApiLevel>15</DalamudApiLevel>
 
     <!-- Versão fixa/tag github -->
-    <Version>1.0.6.4</Version>
+    <Version>1.0.6.5</Version>
   </PropertyGroup>
 </Project>

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using CreateXIV.Services;
 
 namespace CreateXIV.Windows;
 
@@ -31,6 +32,13 @@ public class MainWindow : Window, IDisposable
 
     private string importBuffer = string.Empty;
 
+    private string commandSuggestionSearch = string.Empty;
+    private string macroSuggestionSearch = string.Empty;
+    private bool commandSuggestionOpen = false;
+    private bool macroSuggestionOpen = false;
+    private AliasTableSortColumn sortColumn = AliasTableSortColumn.Default;
+    private bool sortDescending = false;
+
     // Theme-ish colors
     private static readonly Vector4 MacroBaseColor = new(0.72f, 0.80f, 0.88f, 1.00f);
     private static readonly Vector4 CommandBaseColor = new(0.52f, 0.84f, 0.60f, 1.00f);
@@ -44,6 +52,7 @@ public class MainWindow : Window, IDisposable
 
     private static readonly Vector4 PinYellow = new(1.00f, 0.90f, 0.30f, 1f);
     private static readonly Vector4 BorderWhite = new(1.00f, 1.00f, 1.00f, 1f);
+    private static readonly IComparer<string> ReverseOrdinalIgnoreCase = Comparer<string>.Create((a, b) => StringComparer.OrdinalIgnoreCase.Compare(b, a));
 
     public MainWindow(Plugin plugin)
         : base("CreateXIV###CreateXIVMain", ImGuiWindowFlags.NoScrollbar)
@@ -110,9 +119,17 @@ public class MainWindow : Window, IDisposable
                 PersistCategoryColor(macroCategoryInput, macroCategoryColor);
 
                 if (plugin.AddOrUpdateMacroAlias(macroAliasInput, macroCommandInput, macroCategoryInput, macroPinned, out var msg))
+                {
                     Plugin.ChatGui.Print(msg, "CreateXIV");
+                    macroAliasInput = string.Empty;
+                    macroCommandInput = string.Empty;
+                    macroSuggestionSearch = string.Empty;
+                    macroSuggestionOpen = false;
+                }
                 else
+                {
                     Plugin.ChatGui.PrintError(msg, "CreateXIV");
+                }
             },
             clearButtonText: "Clear Macro",
             onClear: () =>
@@ -121,6 +138,8 @@ public class MainWindow : Window, IDisposable
                 macroCommandInput = string.Empty;
                 macroCategoryInput = string.Empty;
                 macroPinned = false;
+                macroSuggestionSearch = string.Empty;
+                macroSuggestionOpen = false;
             },
             kind: AliasKind.Macro
         );
@@ -148,9 +167,17 @@ public class MainWindow : Window, IDisposable
                 PersistCategoryColor(commandCategoryInput, commandCategoryColor);
 
                 if (plugin.AddOrUpdateCommandAlias(commandAliasInput, commandCommandInput, commandCategoryInput, commandPinned, out var msg))
+                {
                     Plugin.ChatGui.Print(msg, "CreateXIV");
+                    commandAliasInput = string.Empty;
+                    commandCommandInput = string.Empty;
+                    commandSuggestionSearch = string.Empty;
+                    commandSuggestionOpen = false;
+                }
                 else
+                {
                     Plugin.ChatGui.PrintError(msg, "CreateXIV");
+                }
             },
             clearButtonText: "Clear Command",
             onClear: () =>
@@ -159,6 +186,8 @@ public class MainWindow : Window, IDisposable
                 commandCommandInput = string.Empty;
                 commandCategoryInput = string.Empty;
                 commandPinned = false;
+                commandSuggestionSearch = string.Empty;
+                commandSuggestionOpen = false;
             },
             kind: AliasKind.Command
         );
@@ -332,6 +361,7 @@ public class MainWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.SetNextItemWidth(160f);
         ImGui.InputText($"##alias_{saveButtonText}", ref aliasValue, 80);
+        var aliasFocused = ImGui.IsItemActive();
 
         ImGui.SameLine();
         ImGui.AlignTextToFramePadding();
@@ -339,6 +369,14 @@ public class MainWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.SetNextItemWidth(350f);
         ImGui.InputText($"##cmd_{saveButtonText}", ref commandValue, 512);
+        var commandFocused = ImGui.IsItemActive();
+        var commandRectMin = ImGui.GetItemRectMin();
+        var commandRectMax = ImGui.GetItemRectMax();
+
+        if (kind == AliasKind.Command)
+            DrawCommandFieldSuggestions(kind, $"##suggest_{saveButtonText}", ref commandValue, commandFocused, commandRectMin, commandRectMax, ref commandSuggestionOpen);
+        else
+            DrawCommandFieldSuggestions(kind, $"##suggest_{saveButtonText}", ref commandValue, commandFocused, commandRectMin, commandRectMax, ref macroSuggestionOpen);
 
         ImGui.SameLine();
         ImGui.AlignTextToFramePadding();
@@ -359,21 +397,8 @@ public class MainWindow : Window, IDisposable
         ImGui.SameLine(0f, 8f);
         DrawFavoriteStarButton_InputRow($"##pin_{saveButtonText}", ref pinned);
 
-        var aliasNorm = Plugin.NormalizeAlias(aliasValue);
-        var cmdNorm = Plugin.NormalizeCommand(commandValue);
-
-        bool ok = !string.IsNullOrWhiteSpace(aliasNorm) && !string.IsNullOrWhiteSpace(cmdNorm);
-        if (string.Equals(aliasNorm, "/create", StringComparison.OrdinalIgnoreCase))
-            ok = false;
-        if (kind == AliasKind.Command && !cmdNorm.StartsWith('/'))
-            ok = false;
-        if (kind == AliasKind.Macro && !IsValidSingleMacroCommand(cmdNorm))
-            ok = false;
-
         ImGui.SameLine(0f, 10f);
-        ImGui.PushStyleColor(ImGuiCol.Text, ok ? new Vector4(0.52f, 0.84f, 0.60f, 1f) : new Vector4(1f, 0.45f, 0.45f, 1f));
-        ImGui.TextUnformatted(ok ? "OK" : "Invalid");
-        ImGui.PopStyleColor();
+        DrawValidationStatus(aliasValue, commandValue, kind, aliasFocused || commandFocused);
 
         ImGui.Spacing();
 
@@ -387,11 +412,190 @@ public class MainWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Test"))
         {
+            var aliasNorm = Plugin.NormalizeAlias(aliasValue);
             if (plugin.TestAlias(aliasNorm, out var msg))
                 Plugin.ChatGui.Print(msg, "CreateXIV");
             else
                 Plugin.ChatGui.PrintError(msg, "CreateXIV");
         }
+    }
+
+    private void DrawValidationStatus(string aliasValue, string commandValue, AliasKind kind, bool textFieldFocused)
+    {
+        var aliasNorm = Plugin.NormalizeAlias(aliasValue);
+        var cmdNorm = Plugin.NormalizeCommand(commandValue);
+
+        if (string.IsNullOrWhiteSpace(aliasValue) && string.IsNullOrWhiteSpace(cmdNorm))
+        {
+            DrawStatusText("Idle", new Vector4(0.60f, 0.60f, 0.62f, 1f));
+            return;
+        }
+
+        if (textFieldFocused || (!string.IsNullOrWhiteSpace(aliasValue) && string.IsNullOrWhiteSpace(cmdNorm)))
+        {
+            DrawStatusText("Waiting..", new Vector4(0.60f, 0.60f, 0.62f, 1f));
+            return;
+        }
+
+        var ok = plugin.IsAliasNameUsableForInput(aliasValue) &&
+                 kind switch
+                 {
+                     AliasKind.Macro => plugin.IsMacroReferenceAvailable(cmdNorm),
+                     AliasKind.Command => plugin.IsKnownCommandAvailable(cmdNorm),
+                     _ => false
+                 };
+
+        DrawStatusText(ok ? "OK" : "Invalid", ok ? new Vector4(0.52f, 0.84f, 0.60f, 1f) : new Vector4(1f, 0.45f, 0.45f, 1f));
+    }
+
+    private static void DrawStatusText(string text, Vector4 color)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, color);
+        ImGui.TextUnformatted(text);
+        ImGui.PopStyleColor();
+    }
+
+    private void DrawCommandFieldSuggestions(AliasKind kind, string id, ref string commandValue, bool commandFocused, Vector2 commandRectMin, Vector2 commandRectMax, ref bool popupOpen)
+    {
+        if (commandFocused)
+            popupOpen = true;
+
+        if (!popupOpen)
+            return;
+
+        var popupName = $"CreateXIVSuggestionWindow_{id}";
+        ImGui.SetNextWindowPos(new Vector2(commandRectMin.X, commandRectMax.Y + 2f), ImGuiCond.Always);
+        ImGui.SetNextWindowSize(new Vector2(MathF.Max(420f, commandRectMax.X - commandRectMin.X), 260f), ImGuiCond.Always);
+
+        var flags = ImGuiWindowFlags.NoTitleBar |
+                    ImGuiWindowFlags.NoResize |
+                    ImGuiWindowFlags.NoMove |
+                    ImGuiWindowFlags.NoSavedSettings |
+                    ImGuiWindowFlags.NoFocusOnAppearing |
+                    ImGuiWindowFlags.NoNavFocus;
+
+        var windowOpen = true;
+        if (!ImGui.Begin(popupName, ref windowOpen, flags))
+        {
+            ImGui.End();
+            popupOpen = false;
+            return;
+        }
+
+        var closePopup = kind == AliasKind.Command
+            ? DrawCommandSuggestionPopup(ref commandValue)
+            : DrawMacroSuggestionPopup(ref commandValue);
+
+        var popupFocused = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
+        var popupHovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows);
+        ImGui.End();
+
+        if (!windowOpen || closePopup || ImGui.IsKeyPressed(ImGuiKey.Escape))
+        {
+            popupOpen = false;
+            return;
+        }
+
+        if (!commandFocused && !popupFocused && !popupHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            popupOpen = false;
+    }
+
+    private bool DrawCommandSuggestionPopup(ref string commandValue)
+    {
+        var closePopup = false;
+
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputText("##commandSuggestionSearch", ref commandSuggestionSearch, 128);
+        ImGui.Separator();
+
+        var query = string.IsNullOrWhiteSpace(commandSuggestionSearch) ? commandValue : commandSuggestionSearch;
+        var suggestions = plugin.GetCommandSuggestions(query);
+
+        if (ImGui.BeginChild("##commandSuggestionList", new Vector2(0f, 200f), false))
+        {
+            if (suggestions.Count == 0)
+            {
+                ImGui.TextDisabled("No matching commands found.");
+            }
+            else
+            {
+                for (var i = 0; i < suggestions.Count; i++)
+                {
+                    var suggestion = suggestions[i];
+                    var source = suggestion.IsNative ? "#FFXIV" : "@" + suggestion.Source;
+                    if (DrawSuggestionRow(suggestion.Command, source, $"cmd{i}", true))
+                    {
+                        commandValue = ApplyCommandSuggestion(commandValue, suggestion.Command);
+                        commandSuggestionSearch = string.Empty;
+                        closePopup = true;
+                    }
+                }
+            }
+        }
+
+        ImGui.EndChild();
+        return closePopup;
+    }
+
+    private bool DrawMacroSuggestionPopup(ref string commandValue)
+    {
+        var closePopup = false;
+
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputText("##macroSuggestionSearch", ref macroSuggestionSearch, 128);
+        ImGui.Separator();
+
+        var query = string.IsNullOrWhiteSpace(macroSuggestionSearch) ? commandValue : macroSuggestionSearch;
+        var suggestions = plugin.GetMacroSuggestions(query);
+
+        if (ImGui.BeginChild("##macroSuggestionList", new Vector2(0f, 200f), false))
+        {
+            if (suggestions.Count == 0)
+            {
+                ImGui.TextDisabled("No created macros found.");
+            }
+            else
+            {
+                for (var i = 0; i < suggestions.Count; i++)
+                {
+                    var suggestion = suggestions[i];
+                    if (DrawSuggestionRow(suggestion.Name, "@" + suggestion.Source, $"macro{i}", false))
+                    {
+                        commandValue = suggestion.Command;
+                        macroSuggestionSearch = string.Empty;
+                        closePopup = true;
+                    }
+                }
+            }
+        }
+
+        ImGui.EndChild();
+        return closePopup;
+    }
+
+    private static bool DrawSuggestionRow(string mainText, string suffix, string id, bool commandRow)
+    {
+        var selected = ImGui.Selectable($"{mainText}##{id}", false, ImGuiSelectableFlags.SpanAllColumns);
+        var suffixSize = ImGui.CalcTextSize(suffix);
+        var targetX = MathF.Max(ImGui.GetCursorPosX() + 8f, ImGui.GetWindowContentRegionMax().X - suffixSize.X);
+        ImGui.SameLine(targetX);
+        ImGui.PushStyleColor(ImGuiCol.Text, commandRow ? new Vector4(0.72f, 0.72f, 0.76f, 1f) : new Vector4(0.72f, 0.72f, 0.76f, 1f));
+        ImGui.TextUnformatted(suffix);
+        ImGui.PopStyleColor();
+        return selected;
+    }
+
+    private static string ApplyCommandSuggestion(string currentValue, string selectedCommand)
+    {
+        var current = Plugin.NormalizeCommand(currentValue);
+        if (string.IsNullOrWhiteSpace(current))
+            return selectedCommand;
+
+        var split = current.Split([' ', '\t'], 2, StringSplitOptions.RemoveEmptyEntries);
+        if (split.Length <= 1)
+            return selectedCommand;
+
+        return selectedCommand + " " + split[1];
     }
 
     private void DrawFavoriteStarButton_InputRow(string id, ref bool pinned)
@@ -414,6 +618,9 @@ public class MainWindow : Window, IDisposable
 
         if (ImGui.Button($"★{id}", new Vector2(26f, 0f)))
             pinned = !pinned;
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Favorite");
 
         ImGui.PopStyleVar(2);
         ImGui.PopStyleColor(4);
@@ -563,10 +770,9 @@ public class MainWindow : Window, IDisposable
 
     private void DrawAliasTable()
     {
-        if (!ImGui.BeginTable("AliasTable", 8, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.ScrollY))
+        if (!ImGui.BeginTable("AliasTable", 7, ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.ScrollY))
             return;
 
-        ImGui.TableSetupColumn("N°", ImGuiTableColumnFlags.WidthFixed, 45);
         ImGui.TableSetupColumn("★", ImGuiTableColumnFlags.WidthFixed, 34);
         ImGui.TableSetupColumn("Type", ImGuiTableColumnFlags.WidthFixed, 80);
         ImGui.TableSetupColumn("Category", ImGuiTableColumnFlags.WidthFixed, 120);
@@ -574,28 +780,10 @@ public class MainWindow : Window, IDisposable
         ImGui.TableSetupColumn("Command", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("Edit", ImGuiTableColumnFlags.WidthFixed, 60);
         ImGui.TableSetupColumn("Del", ImGuiTableColumnFlags.WidthFixed, 60);
-        ImGui.TableHeadersRow();
 
-        var aliases = plugin.Configuration.Aliases
-            .OrderByDescending(x => x.Pinned)
-            .ThenBy(x => x.Number)
-            .ToList();
+        DrawAliasTableHeaders();
 
-        var s = (searchText ?? string.Empty).Trim();
-        if (!string.IsNullOrWhiteSpace(s))
-        {
-            aliases = aliases.Where(a =>
-                (a.Alias?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (a.Command?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (a.Category?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
-            ).ToList();
-        }
-
-        if (typeFilter == 1) aliases = aliases.Where(a => a.Kind == AliasKind.Macro).ToList();
-        if (typeFilter == 2) aliases = aliases.Where(a => a.Kind == AliasKind.Command).ToList();
-
-        if (!string.Equals(categoryFilter, "All", StringComparison.OrdinalIgnoreCase))
-            aliases = aliases.Where(a => string.Equals((a.Category ?? string.Empty).Trim(), categoryFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+        var aliases = GetFilteredAndSortedAliases();
 
         for (var i = 0; i < aliases.Count; i++)
         {
@@ -613,34 +801,29 @@ public class MainWindow : Window, IDisposable
             ImGui.TableNextRow();
 
             ImGui.TableSetColumnIndex(0);
-            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
-            ImGui.TextUnformatted(entry.Number.ToString());
-            ImGui.PopStyleColor();
-
-            ImGui.TableSetColumnIndex(1);
             DrawRowStarButton_WithBorder(i, entry, rowColor);
 
-            ImGui.TableSetColumnIndex(2);
+            ImGui.TableSetColumnIndex(1);
             ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
             ImGui.TextUnformatted(entry.Kind == AliasKind.Macro ? "Macro" : "Cmd");
             ImGui.PopStyleColor();
 
-            ImGui.TableSetColumnIndex(3);
+            ImGui.TableSetColumnIndex(2);
             ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
             ImGui.TextUnformatted(category);
             ImGui.PopStyleColor();
 
-            ImGui.TableSetColumnIndex(4);
+            ImGui.TableSetColumnIndex(3);
             ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
             ImGui.TextUnformatted(alias);
             ImGui.PopStyleColor();
 
-            ImGui.TableSetColumnIndex(5);
+            ImGui.TableSetColumnIndex(4);
             ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
             ImGui.TextWrapped(cmd);
             ImGui.PopStyleColor();
 
-            ImGui.TableSetColumnIndex(6);
+            ImGui.TableSetColumnIndex(5);
             DrawRowButtonColoredKeepText($"Edit##edit{i}", rowColor, () =>
             {
                 if (entry.Kind == AliasKind.Macro)
@@ -677,11 +860,128 @@ public class MainWindow : Window, IDisposable
                 ImGui.EndPopup();
             }
 
-            ImGui.TableSetColumnIndex(7);
+            ImGui.TableSetColumnIndex(6);
             DrawRowButtonColoredKeepText($"Del##del{i}", rowColor, () => plugin.DeleteAlias(alias));
         }
 
         ImGui.EndTable();
+    }
+
+    private void DrawAliasTableHeaders()
+    {
+        ImGui.TableNextRow(ImGuiTableRowFlags.Headers);
+
+        ImGui.TableSetColumnIndex(0);
+        ImGui.TextUnformatted("★");
+
+        ImGui.TableSetColumnIndex(1);
+        DrawSortableHeader("Type", AliasTableSortColumn.Type);
+
+        ImGui.TableSetColumnIndex(2);
+        DrawSortableHeader("Category", AliasTableSortColumn.Category);
+
+        ImGui.TableSetColumnIndex(3);
+        DrawSortableHeader("Alias", AliasTableSortColumn.Alias);
+
+        ImGui.TableSetColumnIndex(4);
+        DrawSortableHeader("Command", AliasTableSortColumn.Command);
+
+        ImGui.TableSetColumnIndex(5);
+        ImGui.TextUnformatted("Edit");
+
+        ImGui.TableSetColumnIndex(6);
+        ImGui.TextUnformatted("Del");
+    }
+
+    private void DrawSortableHeader(string label, AliasTableSortColumn column)
+    {
+        var suffix = sortColumn == column ? (sortDescending ? " ↓" : " ↑") : string.Empty;
+        if (ImGui.SmallButton($"{label}{suffix}##sort_{column}"))
+        {
+            if (sortColumn == column)
+                sortDescending = !sortDescending;
+            else
+            {
+                sortColumn = column;
+                sortDescending = false;
+            }
+        }
+    }
+
+    private List<AliasEntry> GetFilteredAndSortedAliases()
+    {
+        var aliases = plugin.Configuration.Aliases.ToList();
+
+        var s = (searchText ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(s))
+        {
+            aliases = aliases.Where(a =>
+                (a.Alias?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (a.Command?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (a.Category?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false)
+            ).ToList();
+        }
+
+        if (typeFilter == 1) aliases = aliases.Where(a => a.Kind == AliasKind.Macro).ToList();
+        if (typeFilter == 2) aliases = aliases.Where(a => a.Kind == AliasKind.Command).ToList();
+
+        if (!string.Equals(categoryFilter, "All", StringComparison.OrdinalIgnoreCase))
+            aliases = aliases.Where(a => string.Equals((a.Category ?? string.Empty).Trim(), categoryFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        return SortAliasesForDisplay(aliases);
+    }
+
+    private List<AliasEntry> SortAliasesForDisplay(List<AliasEntry> aliases)
+    {
+        IOrderedEnumerable<AliasEntry> ordered;
+
+        switch (sortColumn)
+        {
+            case AliasTableSortColumn.Type:
+                ordered = aliases
+                    .OrderByDescending(a => a.Pinned)
+                    .ThenBy(a => GetKindSortValue(a.Kind, sortDescending))
+                    .ThenBy(a => Plugin.NormalizeAlias(a.Alias), StringComparer.OrdinalIgnoreCase);
+                break;
+
+            case AliasTableSortColumn.Category:
+                ordered = aliases
+                    .OrderByDescending(a => a.Pinned)
+                    .ThenBy(a => string.IsNullOrWhiteSpace(a.Category) ? 1 : 0)
+                    .ThenBy(a => (a.Category ?? string.Empty).Trim(), sortDescending ? ReverseOrdinalIgnoreCase : StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(a => Plugin.NormalizeAlias(a.Alias), StringComparer.OrdinalIgnoreCase);
+                break;
+
+            case AliasTableSortColumn.Alias:
+                ordered = aliases
+                    .OrderByDescending(a => a.Pinned)
+                    .ThenBy(a => GetKindSortValue(a.Kind, sortDescending))
+                    .ThenBy(a => Plugin.NormalizeAlias(a.Alias), sortDescending ? ReverseOrdinalIgnoreCase : StringComparer.OrdinalIgnoreCase);
+                break;
+
+            case AliasTableSortColumn.Command:
+                ordered = aliases
+                    .OrderByDescending(a => a.Pinned)
+                    .ThenBy(a => GetKindSortValue(a.Kind, sortDescending))
+                    .ThenBy(a => Plugin.NormalizeCommand(a.Command), sortDescending ? ReverseOrdinalIgnoreCase : StringComparer.OrdinalIgnoreCase);
+                break;
+
+            default:
+                ordered = aliases
+                    .OrderByDescending(a => a.Pinned)
+                    .ThenBy(a => a.Number);
+                break;
+        }
+
+        return ordered.ToList();
+    }
+
+    private static int GetKindSortValue(AliasKind kind, bool reversed)
+    {
+        if (!reversed)
+            return kind == AliasKind.Command ? 0 : 1;
+
+        return kind == AliasKind.Macro ? 0 : 1;
     }
 
     private void DrawRowStarButton_WithBorder(int i, AliasEntry entry, Vector4 rowColor)
@@ -701,11 +1001,15 @@ public class MainWindow : Window, IDisposable
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 4f);
 
 
-        if (ImGui.Button($"★##pinRow{i}", new Vector2(26f, 0f)))
+        var starText = entry.Pinned ? "★" : "☆";
+        if (ImGui.Button($"{starText}##pinRow{i}", new Vector2(26f, 0f)))
         {
             entry.Pinned = !entry.Pinned;
             plugin.Configuration.Save();
         }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Favorite");
 
         // Manual border (white or yellow)
         var drawList = ImGui.GetWindowDrawList();
@@ -778,4 +1082,12 @@ public class MainWindow : Window, IDisposable
     }
 
     private static float Clamp01(float x) => x < 0 ? 0 : (x > 1 ? 1 : x);
+}
+internal enum AliasTableSortColumn
+{
+    Default,
+    Type,
+    Category,
+    Alias,
+    Command
 }

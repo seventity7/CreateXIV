@@ -13,18 +13,13 @@ public class Configuration : IPluginConfiguration
 
     public int NextAliasNumber { get; set; } = 1;
 
-    /// <summary>
-    /// Global cooldown (ms) for COMMAND aliases (prevents spam). 0 = disabled.
-    /// </summary>
+    /// Global cooldown (ms) for COMMAND aliases (prevents spam), 0 = disabled
     public int CommandCooldownMs { get; set; } = 0;
 
     public List<AliasEntry> Aliases { get; set; } = new();
 
-    /// <summary>
-    /// Per-category row colors stored as #RRGGBB (no alpha).
-    /// </summary>
+    /// Per-category row colors stored as #RRGGBB (no alpha)
     public Dictionary<string, string> CategoryColors { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
