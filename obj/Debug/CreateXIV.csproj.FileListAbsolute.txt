@@ -1,9 +1,0 @@
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\bin\Debug\CreateXIV.deps.json
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\bin\Debug\CreateXIV.dll
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\obj\Debug\CreateXIV.csproj.AssemblyReference.cache
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\obj\Debug\CreateXIV.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\obj\Debug\CreateXIV.AssemblyInfoInputs.cache
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\obj\Debug\CreateXIV.AssemblyInfo.cs
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\obj\Debug\CreateXIV.csproj.CoreCompileInputs.cache
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\obj\Debug\CreateXIV.sourcelink.json
-C:\Users\Bryer\AppData\Roaming\XIVLauncher\devPlugins\CreateXIV\CreateXIV\CreateXIV\obj\Debug\CreateXIV.dll
