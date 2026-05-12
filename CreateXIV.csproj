@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows7.0</TargetFramework>
     <Platforms>x64</Platforms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -20,6 +20,6 @@
     <DalamudApiLevel>15</DalamudApiLevel>
 
     <!-- Versão fixa/tag github -->
-    <Version>1.0.6.5</Version>
+    <Version>1.0.6.6</Version>
   </PropertyGroup>
 </Project>

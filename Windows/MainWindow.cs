@@ -36,6 +36,8 @@ public class MainWindow : Window, IDisposable
     private string macroSuggestionSearch = string.Empty;
     private bool commandSuggestionOpen = false;
     private bool macroSuggestionOpen = false;
+    private float commandSuggestionScroll = 0f;
+    private float macroSuggestionScroll = 0f;
     private AliasTableSortColumn sortColumn = AliasTableSortColumn.Default;
     private bool sortDescending = false;
 
@@ -374,16 +376,21 @@ public class MainWindow : Window, IDisposable
         var commandRectMax = ImGui.GetItemRectMax();
 
         if (kind == AliasKind.Command)
-            DrawCommandFieldSuggestions(kind, $"##suggest_{saveButtonText}", ref commandValue, commandFocused, commandRectMin, commandRectMax, ref commandSuggestionOpen);
+            DrawCommandFieldSuggestions(kind, ref commandValue, commandFocused, commandRectMin, commandRectMax, ref commandSuggestionOpen, ref commandSuggestionScroll);
         else
-            DrawCommandFieldSuggestions(kind, $"##suggest_{saveButtonText}", ref commandValue, commandFocused, commandRectMin, commandRectMax, ref macroSuggestionOpen);
+            DrawCommandFieldSuggestions(kind, ref commandValue, commandFocused, commandRectMin, commandRectMax, ref macroSuggestionOpen, ref macroSuggestionScroll);
+
+        var suggestionOverlayActive = kind == AliasKind.Command ? commandSuggestionOpen : macroSuggestionOpen;
+        if (suggestionOverlayActive)
+            ImGui.BeginDisabled();
 
         ImGui.SameLine();
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted("Category:");
         ImGui.SameLine();
         ImGui.SetNextItemWidth(155f);
-        DrawCategoryComboWithTyping($"##cat_{saveButtonText}", ref categoryValue);
+        categoryValue ??= string.Empty;
+        categoryValue = DrawCategoryComboWithTyping($"##cat_{saveButtonText}", categoryValue);
 
         ImGui.SameLine(0f, 6f);
         ImGui.PushID($"catColor_{saveButtonText}");
@@ -418,6 +425,9 @@ public class MainWindow : Window, IDisposable
             else
                 Plugin.ChatGui.PrintError(msg, "CreateXIV");
         }
+
+        if (suggestionOverlayActive)
+            ImGui.EndDisabled();
     }
 
     private void DrawValidationStatus(string aliasValue, string commandValue, AliasKind kind, bool textFieldFocused)
@@ -455,7 +465,14 @@ public class MainWindow : Window, IDisposable
         ImGui.PopStyleColor();
     }
 
-    private void DrawCommandFieldSuggestions(AliasKind kind, string id, ref string commandValue, bool commandFocused, Vector2 commandRectMin, Vector2 commandRectMax, ref bool popupOpen)
+    private void DrawCommandFieldSuggestions(
+        AliasKind kind,
+        ref string commandValue,
+        bool commandFocused,
+        Vector2 commandRectMin,
+        Vector2 commandRectMax,
+        ref bool popupOpen,
+        ref float scrollOffset)
     {
         if (commandFocused)
             popupOpen = true;
@@ -463,127 +480,113 @@ public class MainWindow : Window, IDisposable
         if (!popupOpen)
             return;
 
-        var popupName = $"CreateXIVSuggestionWindow_{id}";
-        ImGui.SetNextWindowPos(new Vector2(commandRectMin.X, commandRectMax.Y + 2f), ImGuiCond.Always);
-        ImGui.SetNextWindowSize(new Vector2(MathF.Max(420f, commandRectMax.X - commandRectMin.X), 260f), ImGuiCond.Always);
+        var suggestions = kind == AliasKind.Command
+            ? plugin.GetCommandSuggestions(commandValue)
+                .Select(s => (Main: s.Command, Suffix: s.IsNative ? "#FFXIV" : "@" + s.Source, Value: s.Command))
+                .ToList()
+            : plugin.GetMacroSuggestions(commandValue)
+                .Select(s => (Main: s.Name, Suffix: "@" + s.Source, Value: s.Command))
+                .ToList();
 
-        var flags = ImGuiWindowFlags.NoTitleBar |
-                    ImGuiWindowFlags.NoResize |
-                    ImGuiWindowFlags.NoMove |
-                    ImGuiWindowFlags.NoSavedSettings |
-                    ImGuiWindowFlags.NoFocusOnAppearing |
-                    ImGuiWindowFlags.NoNavFocus;
+        var width = MathF.Max(420f, commandRectMax.X - commandRectMin.X);
+        var rowHeight = 22f;
+        var headerHeight = 28f;
+        var maxVisibleRows = 10;
+        var visibleRows = suggestions.Count == 0 ? 1 : Math.Min(maxVisibleRows, suggestions.Count);
+        var height = headerHeight + (visibleRows * rowHeight) + 8f;
+        var popupMin = new Vector2(commandRectMin.X, commandRectMax.Y + 2f);
+        var popupMax = popupMin + new Vector2(width, height);
 
-        var windowOpen = true;
-        if (!ImGui.Begin(popupName, ref windowOpen, flags))
-        {
-            ImGui.End();
-            popupOpen = false;
-            return;
-        }
+        var io = ImGui.GetIO();
+        var mousePos = io.MousePos;
+        var hovered = IsPointInside(mousePos, popupMin, popupMax);
+        var clicked = ImGui.IsMouseClicked(ImGuiMouseButton.Left);
 
-        var closePopup = kind == AliasKind.Command
-            ? DrawCommandSuggestionPopup(ref commandValue)
-            : DrawMacroSuggestionPopup(ref commandValue);
-
-        var popupFocused = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
-        var popupHovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows);
-        ImGui.End();
-
-        if (!windowOpen || closePopup || ImGui.IsKeyPressed(ImGuiKey.Escape))
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
         {
             popupOpen = false;
             return;
         }
 
-        if (!commandFocused && !popupFocused && !popupHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        if (suggestions.Count > maxVisibleRows)
+        {
+            var maxScroll = MathF.Max(0f, suggestions.Count - maxVisibleRows);
+            if (hovered && MathF.Abs(io.MouseWheel) > 0.001f)
+                scrollOffset = Math.Clamp(scrollOffset - io.MouseWheel * 3f, 0f, maxScroll);
+            else
+                scrollOffset = Math.Clamp(scrollOffset, 0f, maxScroll);
+        }
+        else
+        {
+            scrollOffset = 0f;
+        }
+
+        var commandInputHovered = IsPointInside(mousePos, commandRectMin, commandRectMax);
+        if (clicked && !hovered && !commandInputHovered)
+        {
             popupOpen = false;
-    }
-
-    private bool DrawCommandSuggestionPopup(ref string commandValue)
-    {
-        var closePopup = false;
-
-        ImGui.SetNextItemWidth(-1f);
-        ImGui.InputText("##commandSuggestionSearch", ref commandSuggestionSearch, 128);
-        ImGui.Separator();
-
-        var query = string.IsNullOrWhiteSpace(commandSuggestionSearch) ? commandValue : commandSuggestionSearch;
-        var suggestions = plugin.GetCommandSuggestions(query);
-
-        if (ImGui.BeginChild("##commandSuggestionList", new Vector2(0f, 200f), false))
-        {
-            if (suggestions.Count == 0)
-            {
-                ImGui.TextDisabled("No matching commands found.");
-            }
-            else
-            {
-                for (var i = 0; i < suggestions.Count; i++)
-                {
-                    var suggestion = suggestions[i];
-                    var source = suggestion.IsNative ? "#FFXIV" : "@" + suggestion.Source;
-                    if (DrawSuggestionRow(suggestion.Command, source, $"cmd{i}", true))
-                    {
-                        commandValue = ApplyCommandSuggestion(commandValue, suggestion.Command);
-                        commandSuggestionSearch = string.Empty;
-                        closePopup = true;
-                    }
-                }
-            }
+            return;
         }
 
-        ImGui.EndChild();
-        return closePopup;
-    }
+        var drawList = ImGui.GetForegroundDrawList();
+        var bg = ImGui.GetColorU32(new Vector4(0.08f, 0.08f, 0.10f, 0.98f));
+        var border = ImGui.GetColorU32(new Vector4(0.50f, 0.44f, 0.60f, 1f));
+        var header = ImGui.GetColorU32(new Vector4(0.16f, 0.14f, 0.19f, 1f));
+        var rowHover = ImGui.GetColorU32(new Vector4(0.30f, 0.26f, 0.36f, 0.95f));
+        var text = ImGui.GetColorU32(new Vector4(0.94f, 0.92f, 0.96f, 1f));
+        var muted = ImGui.GetColorU32(new Vector4(0.70f, 0.68f, 0.74f, 1f));
+        var disabled = ImGui.GetColorU32(new Vector4(0.55f, 0.53f, 0.58f, 1f));
 
-    private bool DrawMacroSuggestionPopup(ref string commandValue)
-    {
-        var closePopup = false;
+        drawList.AddRectFilled(popupMin, popupMax, bg, 5f);
+        drawList.AddRectFilled(popupMin, new Vector2(popupMax.X, popupMin.Y + headerHeight), header, 5f);
+        drawList.AddRect(popupMin, popupMax, border, 5f);
 
-        ImGui.SetNextItemWidth(-1f);
-        ImGui.InputText("##macroSuggestionSearch", ref macroSuggestionSearch, 128);
-        ImGui.Separator();
+        var headerText = kind == AliasKind.Command
+            ? "Game/plugin commands - type to filter, wheel to scroll"
+            : "Created macros - type to filter, wheel to scroll";
+        drawList.AddText(popupMin + new Vector2(8f, 7f), muted, headerText);
 
-        var query = string.IsNullOrWhiteSpace(macroSuggestionSearch) ? commandValue : macroSuggestionSearch;
-        var suggestions = plugin.GetMacroSuggestions(query);
-
-        if (ImGui.BeginChild("##macroSuggestionList", new Vector2(0f, 200f), false))
+        if (suggestions.Count == 0)
         {
-            if (suggestions.Count == 0)
-            {
-                ImGui.TextDisabled("No created macros found.");
-            }
-            else
-            {
-                for (var i = 0; i < suggestions.Count; i++)
-                {
-                    var suggestion = suggestions[i];
-                    if (DrawSuggestionRow(suggestion.Name, "@" + suggestion.Source, $"macro{i}", false))
-                    {
-                        commandValue = suggestion.Command;
-                        macroSuggestionSearch = string.Empty;
-                        closePopup = true;
-                    }
-                }
-            }
+            var emptyText = kind == AliasKind.Command ? "No matching commands found." : "No created macros found.";
+            drawList.AddText(popupMin + new Vector2(8f, headerHeight + 8f), disabled, emptyText);
+            return;
         }
 
-        ImGui.EndChild();
-        return closePopup;
+        var startIndex = (int)MathF.Floor(scrollOffset);
+        var endIndex = Math.Min(suggestions.Count, startIndex + visibleRows);
+        for (var i = startIndex; i < endIndex; i++)
+        {
+            var rowIndex = i - startIndex;
+            var rowMin = popupMin + new Vector2(4f, headerHeight + 4f + rowIndex * rowHeight);
+            var rowMax = new Vector2(popupMax.X - 4f, rowMin.Y + rowHeight);
+            var rowHovered = IsPointInside(mousePos, rowMin, rowMax);
+
+            if (rowHovered)
+                drawList.AddRectFilled(rowMin, rowMax, rowHover, 3f);
+
+            var suggestion = suggestions[i];
+            drawList.AddText(rowMin + new Vector2(6f, 3f), text, suggestion.Main);
+
+            var suffixSize = ImGui.CalcTextSize(suggestion.Suffix);
+            drawList.AddText(new Vector2(rowMax.X - suffixSize.X - 8f, rowMin.Y + 3f), muted, suggestion.Suffix);
+
+            if (clicked && rowHovered)
+            {
+                commandValue = kind == AliasKind.Command
+                    ? ApplyCommandSuggestion(commandValue, suggestion.Value)
+                    : suggestion.Value;
+                commandSuggestionSearch = string.Empty;
+                macroSuggestionSearch = string.Empty;
+                scrollOffset = 0f;
+                popupOpen = false;
+                return;
+            }
+        }
     }
 
-    private static bool DrawSuggestionRow(string mainText, string suffix, string id, bool commandRow)
-    {
-        var selected = ImGui.Selectable($"{mainText}##{id}", false, ImGuiSelectableFlags.SpanAllColumns);
-        var suffixSize = ImGui.CalcTextSize(suffix);
-        var targetX = MathF.Max(ImGui.GetCursorPosX() + 8f, ImGui.GetWindowContentRegionMax().X - suffixSize.X);
-        ImGui.SameLine(targetX);
-        ImGui.PushStyleColor(ImGuiCol.Text, commandRow ? new Vector4(0.72f, 0.72f, 0.76f, 1f) : new Vector4(0.72f, 0.72f, 0.76f, 1f));
-        ImGui.TextUnformatted(suffix);
-        ImGui.PopStyleColor();
-        return selected;
-    }
+    private static bool IsPointInside(Vector2 point, Vector2 min, Vector2 max)
+        => point.X >= min.X && point.X <= max.X && point.Y >= min.Y && point.Y <= max.Y;
 
     private static string ApplyCommandSuggestion(string currentValue, string selectedCommand)
     {
@@ -626,8 +629,9 @@ public class MainWindow : Window, IDisposable
         ImGui.PopStyleColor(4);
     }
 
-    private void DrawCategoryComboWithTyping(string id, ref string categoryValue)
+    private string DrawCategoryComboWithTyping(string id, string? categoryValue)
     {
+        categoryValue ??= string.Empty;
         var cats = plugin.Configuration.Aliases
             .Select(a => (a.Category ?? string.Empty).Trim())
             .Where(c => !string.IsNullOrWhiteSpace(c))
@@ -649,7 +653,9 @@ public class MainWindow : Window, IDisposable
         if (ImGui.BeginCombo(id, preview))
         {
             ImGui.SetNextItemWidth(-1);
-            ImGui.InputText("##catTyping", ref categoryValue, 64);
+            var typedCategory = categoryValue ?? string.Empty;
+            if (ImGui.InputText("##catTyping", ref typedCategory, 64))
+                categoryValue = typedCategory ?? string.Empty;
 
             ImGui.Separator();
 
@@ -667,6 +673,8 @@ public class MainWindow : Window, IDisposable
 
             ImGui.EndCombo();
         }
+
+        return categoryValue ?? string.Empty;
     }
 
     private void PersistCategoryColor(string category, Vector4 color)

@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Linq;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
+using Lumina.Excel.Sheets;
 
 namespace CreateXIV.Services;
 
@@ -14,147 +17,15 @@ internal sealed record MacroSuggestion(string Name, string Command, uint Number,
 
 internal static unsafe class CommandSuggestionService
 {
-    private static readonly string[] NativeGameCommands =
-    [
-        "/?",
-        "/action",
-        "/ac",
-        "/additionalaction",
-        "/addaction",
-        "/airship",
-        "/alarm",
-        "/alliance",
-        "/a",
-        "/allysay",
-        "/automove",
-        "/away",
-        "/battlemode",
-        "/bm",
-        "/battletarget",
-        "/bt",
-        "/beckon",
-        "/blacklist",
-        "/blist",
-        "/busy",
-        "/character",
-        "/check",
-        "/clearlog",
-        "/cl",
-        "/comfort",
-        "/companion",
-        "/countdown",
-        "/crosshotbar",
-        "/chotbar",
-        "/cwlinkshell",
-        "/cwl",
-        "/dice",
-        "/directchat",
-        "/dismount",
-        "/displayhead",
-        "/dnd",
-        "/echo",
-        "/e",
-        "/emote",
-        "/em",
-        "/enemysign",
-        "/ensign",
-        "/equipitem",
-        "/equip",
-        "/equipset",
-        "/gearset",
-        "/facetarget",
-        "/ft",
-        "/fc",
-        "/freecompany",
-        "/follow",
-        "/focustarget",
-        "/focustargetoff",
-        "/friendlist",
-        "/flist",
-        "/generalaction",
-        "/gaction",
-        "/gpose",
-        "/groupcall",
-        "/grouppose",
-        "/hotbar",
-        "/hudlayout",
-        "/icam",
-        "/itemsort",
-        "/isort",
-        "/itemsearch",
-        "/isearch",
-        "/linkshell",
-        "/l1",
-        "/l2",
-        "/l3",
-        "/l4",
-        "/l5",
-        "/l6",
-        "/l7",
-        "/l8",
-        "/logout",
-        "/logoff",
-        "/macro",
-        "/macrolock",
-        "/macrocancel",
-        "/macroicon",
-        "/micon",
-        "/map",
-        "/marking",
-        "/mk",
-        "/minion",
-        "/mount",
-        "/nexttarget",
-        "/nt",
-        "/novicenetwork",
-        "/n",
-        "/pac",
-        "/party",
-        "/p",
-        "/petsize",
-        "/playtime",
-        "/pvpteam",
-        "/pvpteamcmd",
-        "/random",
-        "/readycheck",
-        "/recast",
-        "/reply",
-        "/r",
-        "/return",
-        "/say",
-        "/s",
-        "/search",
-        "/shout",
-        "/sh",
-        "/shutdown",
-        "/sit",
-        "/statusoff",
-        "/sundropdance",
-        "/target",
-        "/ta",
-        "/targetenemy",
-        "/tenemy",
-        "/targetlastenemy",
-        "/tle",
-        "/targetlasttarget",
-        "/tlt",
-        "/targetpc",
-        "/tpc",
-        "/tell",
-        "/t",
-        "/trade",
-        "/wait",
-        "/wave",
-        "/yell",
-        "/y"
-    ];
+    private static readonly object NativeCommandCacheLock = new();
+    private static IReadOnlyList<string>? nativeCommandCache;
 
     internal static IReadOnlyList<CommandSuggestion> GetCommandSuggestions(Plugin plugin, string query)
     {
         var normalizedQuery = NormalizeCommandQuery(query);
         var suggestions = new Dictionary<string, CommandSuggestion>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var command in NativeGameCommands)
+        foreach (var command in GetNativeGameCommands(Plugin.DataManager))
             suggestions[command] = new CommandSuggestion(command, "FFXIV", true);
 
         foreach (var commandPair in Plugin.CommandManager.Commands)
@@ -174,8 +45,86 @@ internal static unsafe class CommandSuggestionService
             .Where(s => MatchesCommandQuery(s, normalizedQuery))
             .OrderBy(s => GetMatchRank(s.Command, normalizedQuery))
             .ThenBy(s => s.Command, StringComparer.OrdinalIgnoreCase)
-            .Take(100)
             .ToList();
+    }
+
+    private static IReadOnlyList<string> GetNativeGameCommands(IDataManager dataManager)
+    {
+        if (nativeCommandCache != null)
+            return nativeCommandCache;
+
+        lock (NativeCommandCacheLock)
+        {
+            if (nativeCommandCache != null)
+                return nativeCommandCache;
+
+            var commands = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                var sheet = dataManager.GetExcelSheet<TextCommand>();
+                foreach (var row in sheet)
+                {
+                    AddNativeCommand(commands, row.Command);
+                    AddNativeCommand(commands, row.ShortCommand);
+                    AddNativeCommand(commands, row.Alias);
+                    AddNativeCommand(commands, row.ShortAlias);
+                    AddNativeCommandsFromTextCommandRow(commands, row);
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Warning(ex, "Could not load native game commands from TextCommand sheet.");
+            }
+
+            nativeCommandCache = commands.Values
+                .OrderBy(command => command, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return nativeCommandCache;
+        }
+    }
+
+    private static void AddNativeCommandsFromTextCommandRow(Dictionary<string, string> commands, TextCommand row)
+    {
+        const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public;
+        var rowType = typeof(TextCommand);
+
+        foreach (var field in rowType.GetFields(Flags))
+        {
+            if (!IsCommandLikeMember(field.Name))
+                continue;
+
+            AddNativeCommand(commands, field.GetValue(row));
+        }
+
+        foreach (var property in rowType.GetProperties(Flags))
+        {
+            if (!IsCommandLikeMember(property.Name) || property.GetIndexParameters().Length != 0)
+                continue;
+
+            AddNativeCommand(commands, property.GetValue(row));
+        }
+    }
+
+    private static bool IsCommandLikeMember(string name)
+        => name.Contains("Command", StringComparison.OrdinalIgnoreCase) ||
+           name.Contains("Alias", StringComparison.OrdinalIgnoreCase);
+
+    private static void AddNativeCommand(Dictionary<string, string> commands, object? value)
+    {
+        var command = value?.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(command))
+            return;
+
+        if (!command.StartsWith('/'))
+            command = "/" + command;
+
+        command = Plugin.NormalizeAlias(command);
+        if (command.Length <= 1)
+            return;
+
+        commands.TryAdd(command, command);
     }
 
     internal static IReadOnlyList<MacroSuggestion> GetMacroSuggestions(string query)
@@ -199,12 +148,12 @@ internal static unsafe class CommandSuggestionService
             .ToList();
     }
 
-    internal static bool IsKnownNativeCommand(string commandInput)
+    internal static bool IsKnownNativeCommand(IDataManager dataManager, string commandInput)
     {
         if (!Plugin.TryGetCommandToken(commandInput, out var token))
             return false;
 
-        return NativeGameCommands.Contains(token, StringComparer.OrdinalIgnoreCase);
+        return GetNativeGameCommands(dataManager).Contains(token, StringComparer.OrdinalIgnoreCase);
     }
 
     internal static bool IsMacroAvailable(uint set, uint number)

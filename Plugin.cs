@@ -24,6 +24,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
+    [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
 
     private const string CreateCommandName = "/create";
 
@@ -107,7 +108,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (string.Equals(alias, CreateCommandName, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        if (CommandSuggestionService.IsKnownNativeCommand(alias))
+        if (CommandSuggestionService.IsKnownNativeCommand(DataManager, alias))
             return false;
 
         if (!CommandManager.Commands.ContainsKey(alias))
@@ -126,7 +127,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
 
         return CommandManager.Commands.ContainsKey(token) ||
-               CommandSuggestionService.IsKnownNativeCommand(token);
+               CommandSuggestionService.IsKnownNativeCommand(DataManager, token);
     }
 
     internal bool IsMacroReferenceAvailable(string commandInput)
@@ -349,6 +350,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
             // Re-register
             RegisterAllAliasCommands();
+            Configuration.Save();
 
             message = $"Imported {Configuration.Aliases.Count} aliases.";
             return true;
@@ -427,7 +429,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var existing = Configuration.Aliases.FirstOrDefault(x =>
             string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
 
-        if (existing == null && (CommandManager.Commands.ContainsKey(normalizedAlias) || CommandSuggestionService.IsKnownNativeCommand(normalizedAlias)))
+        if (existing == null && (CommandManager.Commands.ContainsKey(normalizedAlias) || CommandSuggestionService.IsKnownNativeCommand(DataManager, normalizedAlias)))
         {
             message = $"Alias {normalizedAlias} conflicts with an existing command.";
             return false;
@@ -625,8 +627,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private void RegisterAllAliasCommands()
     {
-        var validEntries = new List<AliasEntry>();
-
         foreach (var entry in Configuration.Aliases
                      .OrderByDescending(x => x.Pinned)
                      .ThenBy(x => x.Number))
@@ -634,25 +634,25 @@ public sealed unsafe class Plugin : IDalamudPlugin
             entry.Alias = NormalizeAlias(entry.Alias);
             entry.Command = NormalizeCommand(entry.Command);
 
-            if (string.IsNullOrWhiteSpace(entry.Alias) || string.IsNullOrWhiteSpace(entry.Command))
+            if (!CanRegisterSavedAlias(entry))
                 continue;
 
-            if (string.Equals(entry.Alias, CreateCommandName, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            if (!ValidateEntry(entry, out _))
-                continue;
-
-            if (RegisterAliasCommand(entry))
-                validEntries.Add(entry);
+            RegisterAliasCommand(entry);
         }
+    }
 
-        Configuration.Aliases = validEntries
-            .OrderByDescending(x => x.Pinned)
-            .ThenBy(x => x.Number)
-            .ToList();
+    private static bool CanRegisterSavedAlias(AliasEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.Alias) || string.IsNullOrWhiteSpace(entry.Command))
+            return false;
 
-        Configuration.Save();
+        if (string.Equals(entry.Alias, CreateCommandName, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (entry.Kind == AliasKind.Macro)
+            return TryParseSingleMacroReference(entry.Command, out _);
+
+        return true;
     }
 
     private bool RegisterAliasCommand(AliasEntry entry)
