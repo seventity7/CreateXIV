@@ -1,5 +1,3 @@
-`Most recent update: 1.0.6.6 - May 11 2026`
-
 # 🛠️ CreateXIV
 
 CreateXIV is a Dalamud plugin that allows players to create custom slash command aliases with ease.
