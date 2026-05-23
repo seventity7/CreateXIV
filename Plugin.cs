@@ -23,7 +23,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
-    [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
 
     private const string CreateCommandName = "/create";
@@ -93,6 +92,92 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     public void ToggleMainUi() => MainWindow.Toggle();
 
+    internal bool TryGetAliasProblem(AliasEntry entry, out string message)
+    {
+        message = string.Empty;
+
+        var alias = NormalizeAlias(entry.Alias);
+        var command = NormalizeCommand(entry.Command);
+
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            message = "Alias is empty.";
+            return true;
+        }
+
+        if (string.Equals(alias, CreateCommandName, StringComparison.OrdinalIgnoreCase))
+        {
+            message = "Alias uses CreateXIV's own /create command.";
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            message = entry.Kind == AliasKind.Macro
+                ? "Empty/deleted macro."
+                : "Target command is empty.";
+            return true;
+        }
+
+        if (entry.Kind == AliasKind.Macro)
+        {
+            if (!TryParseSingleMacroReference(command, out var macroRef))
+            {
+                message = "Invalid macro reference. Use macro:## or shared:##.";
+                return true;
+            }
+
+            if (!CommandSuggestionService.IsMacroAvailable(macroRef.Set, macroRef.Number))
+            {
+                message = "Empty/deleted macro.";
+                return true;
+            }
+
+            return false;
+        }
+
+        if (!IsKnownCommandAvailable(command))
+        {
+            message = "Target command no longer exists.";
+            return true;
+        }
+
+        return false;
+    }
+
+    internal bool TryGetAliasInputProblem(string aliasInput, out string message)
+    {
+        var alias = NormalizeAlias(aliasInput);
+
+        if (string.IsNullOrWhiteSpace(alias) || alias.Length <= 1)
+        {
+            message = "Alias cannot be empty.";
+            return true;
+        }
+
+        if (string.Equals(alias, CreateCommandName, StringComparison.OrdinalIgnoreCase))
+        {
+            message = "Alias /create is reserved by CreateXIV.";
+            return true;
+        }
+
+        if (CommandSuggestionService.IsKnownNativeCommand(DataManager, alias))
+        {
+            message = $"Alias {alias} conflicts with a native FFXIV command.";
+            return true;
+        }
+
+        if (CommandManager.Commands.ContainsKey(alias) &&
+            !Configuration.Aliases.Any(a => string.Equals(NormalizeAlias(a.Alias), alias, StringComparison.OrdinalIgnoreCase)))
+        {
+            message = $"Alias {alias} is already registered by Dalamud or another plugin.";
+            return true;
+        }
+
+        message = string.Empty;
+        return false;
+    }
+
     internal IReadOnlyList<CommandSuggestion> GetCommandSuggestions(string query)
         => CommandSuggestionService.GetCommandSuggestions(this, query);
 
@@ -100,23 +185,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         => CommandSuggestionService.GetMacroSuggestions(query);
 
     internal bool IsAliasNameUsableForInput(string aliasInput)
-    {
-        var alias = NormalizeAlias(aliasInput);
-        if (string.IsNullOrWhiteSpace(alias) || alias.Length <= 1)
-            return false;
-
-        if (string.Equals(alias, CreateCommandName, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (CommandSuggestionService.IsKnownNativeCommand(DataManager, alias))
-            return false;
-
-        if (!CommandManager.Commands.ContainsKey(alias))
-            return true;
-
-        return Configuration.Aliases.Any(a =>
-            string.Equals(NormalizeAlias(a.Alias), alias, StringComparison.OrdinalIgnoreCase));
-    }
+        => !TryGetAliasInputProblem(aliasInput, out _);
 
     internal bool IsKnownCommandAvailable(string commandInput)
     {
@@ -219,12 +288,12 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         var restored = deletedStack.Pop();
 
-        // re-number to end
+        // Re-number to the end
         restored.Number = GetNextAliasNumber();
         restored.Alias = NormalizeAlias(restored.Alias);
         restored.Command = NormalizeCommand(restored.Command);
 
-        // validate again
+        // Validate again
         if (!ValidateEntry(restored, out message))
             return false;
 
@@ -255,7 +324,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
         }
 
-        // create new alias name
+        // Create a new alias name
         var baseName = existing.Alias.TrimStart('/');
         var newAlias = "/" + baseName + "_copy";
         var n = 1;
@@ -310,7 +379,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     public string ExportAliasesJson()
     {
-        // deterministic export order
+        // Deterministic export order
         var export = Configuration.Aliases
             .OrderByDescending(x => x.Pinned)
             .ThenBy(x => x.Number)
@@ -414,10 +483,19 @@ public sealed unsafe class Plugin : IDalamudPlugin
         }
 
         // Macro: only one in-game macro is allowed
-        if (kind == AliasKind.Macro && !TryParseSingleMacroReference(normalizedCommand, out _))
+        if (kind == AliasKind.Macro)
         {
-            message = "Macro aliases must use exactly one macro reference: macro:## or shared:##. Example: shared:47";
-            return false;
+            if (!TryParseSingleMacroReference(normalizedCommand, out var macroRef))
+            {
+                message = "Macro aliases must use exactly one macro reference: macro:## or shared:##. Example: shared:47";
+                return false;
+            }
+
+            if (!CommandSuggestionService.IsMacroAvailable(macroRef.Set, macroRef.Number))
+            {
+                message = "Macro does not exist or is empty.";
+                return false;
+            }
         }
 
         if (kind == AliasKind.Command && !IsKnownCommandAvailable(normalizedCommand))
@@ -429,11 +507,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         var existing = Configuration.Aliases.FirstOrDefault(x =>
             string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
 
-        if (existing == null && (CommandManager.Commands.ContainsKey(normalizedAlias) || CommandSuggestionService.IsKnownNativeCommand(DataManager, normalizedAlias)))
-        {
-            message = $"Alias {normalizedAlias} conflicts with an existing command.";
+        if (existing == null && TryGetAliasInputProblem(normalizedAlias, out message))
             return false;
-        }
 
         if (existing != null)
         {
@@ -507,9 +582,15 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         if (entry.Kind == AliasKind.Macro)
         {
-            if (!TryParseSingleMacroReference(cmd, out _))
+            if (!TryParseSingleMacroReference(cmd, out var macroRef))
             {
                 message = "Invalid macro format. Use macro:## or shared:## only.";
+                return false;
+            }
+
+            if (!CommandSuggestionService.IsMacroAvailable(macroRef.Set, macroRef.Number))
+            {
+                message = "Macro does not exist or is empty.";
                 return false;
             }
         }
@@ -795,7 +876,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
                 var diff = (DateTime.UtcNow - last).TotalMilliseconds;
 
                 if (diff < cd)
-                    return; // silently ignore spam
+                    return; // Silently ignore spam
             }
 
             lastCommandExecUtc[alias] = DateTime.UtcNow;

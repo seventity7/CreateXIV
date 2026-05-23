@@ -5,7 +5,7 @@
     "Punchline": "Create your own custom slash commands.",
     "Description": "Lets players create custom slash command aliases from an in-game UI.",
     "InternalName": "CreateXIV",
-    "AssemblyVersion": "1.0.6.6",
+    "AssemblyVersion": "1.0.6.7",
     "RepoUrl": "https://github.com/seventity7/CreateXIV",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
@@ -18,6 +18,6 @@
     "LoadRequiredState": 2,
     "LoadSync": true,
     "DownloadLinkInstall": "https://github.com/seventity7/CreateXIV/releases/latest/download/CreateXIV.zip",
-    "IconUrl": "https://raw.githubusercontent.com/seventity7/CreateXIV/main/create.png"
+    "IconUrl": "https://raw.githubusercontent.com/seventity7/CreateXIV/main/icon.png"
   }
 ]

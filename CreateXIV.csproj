@@ -1,25 +1,10 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <TargetFramework>net10.0-windows7.0</TargetFramework>
-    <Platforms>x64</Platforms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-    <AssemblyName>CreateXIV</AssemblyName>
-    <RootNamespace>CreateXIV</RootNamespace>
-
-    <!-- Manifest fields (Packager lê daqui) -->
-    <Author>Bryer</Author>
-    <Name>CreateXIV</Name>
-    <Punchline>Create custom macro and plugin command aliases.</Punchline>
-    <Description>Lets players create custom slash command aliases from an in-game UI.</Description>
-    <RepoUrl>https://github.com/seventity7/CreateXIV</RepoUrl>
-
-    <!-- API atual do Dalamud -->
-    <DalamudApiLevel>15</DalamudApiLevel>
-
-    <!-- Versão fixa/tag github -->
-    <Version>1.0.6.6</Version>
+    <Version>1.0.6.7</Version>
   </PropertyGroup>
 </Project>

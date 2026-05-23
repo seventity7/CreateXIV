@@ -44,6 +44,8 @@ public class MainWindow : Window, IDisposable
     // Theme-ish colors
     private static readonly Vector4 MacroBaseColor = new(0.72f, 0.80f, 0.88f, 1.00f);
     private static readonly Vector4 CommandBaseColor = new(0.52f, 0.84f, 0.60f, 1.00f);
+    private static readonly Vector4 BrokenRowBg = new(1.00f, 0.32f, 0.32f, 0.28f);
+    private static readonly Vector4 BrokenRowText = new(1.00f, 0.72f, 0.72f, 1.00f);
 
     private static readonly Vector4 TooltipBg = new(0.34f, 0.29f, 0.36f, 0.92f);
     private static readonly Vector4 TooltipBorder = new(0f, 0f, 0f, 0.85f);
@@ -409,8 +411,19 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Spacing();
 
+        var saveBlocked = TryGetSaveBlockReason(aliasValue, commandValue, kind, out var saveBlockReason);
+        if (saveBlocked)
+            ImGui.BeginDisabled();
+
         if (ImGui.Button(saveButtonText))
             onSave();
+
+        if (saveBlocked)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                DrawSmallTooltip(saveBlockReason);
+        }
 
         ImGui.SameLine();
         if (ImGui.Button(clearButtonText))
@@ -428,6 +441,59 @@ public class MainWindow : Window, IDisposable
 
         if (suggestionOverlayActive)
             ImGui.EndDisabled();
+    }
+
+    private bool TryGetSaveBlockReason(string aliasValue, string commandValue, AliasKind kind, out string message)
+    {
+        var aliasNorm = Plugin.NormalizeAlias(aliasValue);
+        var cmdNorm = Plugin.NormalizeCommand(commandValue);
+
+        if (string.IsNullOrWhiteSpace(aliasNorm) || aliasNorm.Length <= 1)
+        {
+            message = "Alias cannot be empty.";
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(cmdNorm))
+        {
+            message = "Command cannot be empty.";
+            return true;
+        }
+
+        if (plugin.TryGetAliasInputProblem(aliasNorm, out message))
+            return true;
+
+        if (kind == AliasKind.Macro)
+        {
+            if (!IsValidSingleMacroCommand(cmdNorm))
+            {
+                message = "Invalid macro format. Use macro:## or shared:## only.";
+                return true;
+            }
+
+            if (!plugin.IsMacroReferenceAvailable(cmdNorm))
+            {
+                message = "Empty/deleted macro.";
+                return true;
+            }
+        }
+        else if (!plugin.IsKnownCommandAvailable(cmdNorm))
+        {
+            message = "Target command does not exist. Originated plugin might be disabled/uninstalled.";
+            return true;
+        }
+
+        message = string.Empty;
+        return false;
+    }
+
+    private void DrawSmallTooltip(string text)
+    {
+        PushTooltipStyle();
+        ImGui.BeginTooltip();
+        ImGui.TextUnformatted(text);
+        ImGui.EndTooltip();
+        PopTooltipStyle();
     }
 
     private void DrawValidationStatus(string aliasValue, string commandValue, AliasKind kind, bool textFieldFocused)
@@ -806,33 +872,45 @@ public class MainWindow : Window, IDisposable
             if (!string.IsNullOrWhiteSpace(category) && TryGetCategoryColor(category, out var catColor))
                 rowColor = new Vector4(catColor.X, catColor.Y, catColor.Z, 1f);
 
+            var broken = plugin.TryGetAliasProblem(entry, out var problem);
+            var textColor = broken ? BrokenRowText : rowColor;
+
             ImGui.TableNextRow();
+            if (broken)
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(BrokenRowBg));
+
+            var showProblemTooltip = false;
 
             ImGui.TableSetColumnIndex(0);
-            DrawRowStarButton_WithBorder(i, entry, rowColor);
+            DrawRowStarButton_WithBorder(i, entry, textColor);
+            showProblemTooltip |= ImGui.IsItemHovered();
 
             ImGui.TableSetColumnIndex(1);
-            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.PushStyleColor(ImGuiCol.Text, textColor);
             ImGui.TextUnformatted(entry.Kind == AliasKind.Macro ? "Macro" : "Cmd");
+            showProblemTooltip |= ImGui.IsItemHovered();
             ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(2);
-            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.PushStyleColor(ImGuiCol.Text, textColor);
             ImGui.TextUnformatted(category);
+            showProblemTooltip |= ImGui.IsItemHovered();
             ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(3);
-            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.PushStyleColor(ImGuiCol.Text, textColor);
             ImGui.TextUnformatted(alias);
+            showProblemTooltip |= ImGui.IsItemHovered();
             ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(4);
-            ImGui.PushStyleColor(ImGuiCol.Text, rowColor);
+            ImGui.PushStyleColor(ImGuiCol.Text, textColor);
             ImGui.TextWrapped(cmd);
+            showProblemTooltip |= ImGui.IsItemHovered();
             ImGui.PopStyleColor();
 
             ImGui.TableSetColumnIndex(5);
-            DrawRowButtonColoredKeepText($"Edit##edit{i}", rowColor, () =>
+            DrawRowButtonColoredKeepText($"Edit##edit{i}", textColor, () =>
             {
                 if (entry.Kind == AliasKind.Macro)
                 {
@@ -851,6 +929,7 @@ public class MainWindow : Window, IDisposable
                     if (TryGetCategoryColor(category, out var c)) commandCategoryColor = c;
                 }
             });
+            showProblemTooltip |= ImGui.IsItemHovered();
 
             if (ImGui.BeginPopupContextItem($"ctx_edit{i}"))
             {
@@ -869,7 +948,17 @@ public class MainWindow : Window, IDisposable
             }
 
             ImGui.TableSetColumnIndex(6);
-            DrawRowButtonColoredKeepText($"Del##del{i}", rowColor, () => plugin.DeleteAlias(alias));
+            DrawRowButtonColoredKeepText($"Del##del{i}", textColor, () => plugin.DeleteAlias(alias));
+            showProblemTooltip |= ImGui.IsItemHovered();
+
+            if (broken && showProblemTooltip)
+            {
+                PushTooltipStyle();
+                ImGui.BeginTooltip();
+                ImGui.TextUnformatted(problem);
+                ImGui.EndTooltip();
+                PopTooltipStyle();
+            }
         }
 
         ImGui.EndTable();
@@ -1023,12 +1112,12 @@ public class MainWindow : Window, IDisposable
         var drawList = ImGui.GetWindowDrawList();
         var min = ImGui.GetItemRectMin();
         var max = ImGui.GetItemRectMax();
-        float thickness = 1.2f;            // <-- BORDA
+        float thickness = 1.2f;            // <-- BORDER
         float rounding = 4f;
 
         var half = thickness * 0.5f;
 
-        // expande o retângulo para não clipar o “lado de fora” da borda
+        // Expand the rectangle so the outer side of the border is not clipped
         var pMin = min - new Vector2(half, half);
         var pMax = max + new Vector2(half, half);
 
