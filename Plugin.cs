@@ -1,5 +1,6 @@
-using Dalamud.Game.Command;
+﻿using Dalamud.Game.Command;
 using Dalamud.IoC;
+using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -24,8 +25,10 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
+    [PluginService] internal static IFramework Framework { get; private set; } = null!;
 
     private const string CreateCommandName = "/create";
+    private const string CreateAliasUsage = "Usage: /create <alias> <command|macro:##|shared:##> [category-Optional]\nExample: /create mv mastervolume";
 
     public Configuration Configuration { get; init; }
 
@@ -36,11 +39,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private readonly Dictionary<string, List<string>> registeredAliasCommands = new(StringComparer.OrdinalIgnoreCase);
 
-    // ===== Undo Delete =====
-    private readonly Stack<AliasEntry> deletedStack = new();
+    // ===== Undo =====
+    private readonly Stack<List<AliasEntry>> undoStack = new();
 
-    // ===== Cooldown tracking (Command aliases) =====
-    private readonly Dictionary<string, DateTime> lastCommandExecUtc = new(StringComparer.OrdinalIgnoreCase);
+    // ===== Delayed alias execution =====
+    private readonly List<(string Alias, DateTime DueUtc)> pendingAliasRuns = new();
 
     public Plugin()
     {
@@ -56,7 +59,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CreateCommandName, new CommandInfo(OnCreateCommand)
         {
-            HelpMessage = "Opens the CreateXIV window."
+            HelpMessage = "Opens the CreateXIV window, or creates an alias with /create <alias> <command|macro:##|shared:##> [category-Optional]."
         });
 
         RegisterAllAliasCommands();
@@ -64,6 +67,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
+        Framework.Update += OnFrameworkUpdate;
 
         Log.Information($"=== {PluginInterface.Manifest.Name} loaded ===");
     }
@@ -73,6 +77,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
+        Framework.Update -= OnFrameworkUpdate;
 
         UnregisterAllAliasCommands();
         CommandManager.RemoveHandler(CreateCommandName);
@@ -83,12 +88,43 @@ public sealed unsafe class Plugin : IDalamudPlugin
         MainWindow.Dispose();
     }
 
+    internal void OpenDalamudPluginListForFeedback()
+    {
+        // Dalamud exposes this as a supported way to open the plugin installer with search text.
+        // The search string intentionally uses the plugin name without a space because that is how it is listed and how I was told to do so.
+        var opened = PluginInterface.OpenPluginInstallerTo(PluginInstallerOpenKind.AllPlugins, "CreateXIV");
+        if (!opened)
+            CommandManager.ProcessCommand("/xlplugins");
+    }
+
     private void OnCreateCommand(string command, string args)
     {
-        MainWindow.Toggle();
+        if (string.IsNullOrWhiteSpace(args))
+        {
+            MainWindow.Toggle();
+            return;
+        }
+
+        if (TryCreateAliasFromChat(args, out var message, out var ok))
+        {
+            if (ok)
+                ChatGui.Print(message, "CreateXIV");
+            else
+                ChatGui.PrintError(message, "CreateXIV");
+        }
     }
 
     public void ToggleConfigUi() => ConfigWindow.Toggle();
+
+    internal void OpenSettingsWindow() => ConfigWindow.IsOpen = true;
+
+    internal void PrintConfirmation(string message)
+    {
+        // These messages are useful while editing aliases but some users prefer a quieter chat.
+        // Errors still bypass this helper so important failures will never be hidden.
+        if (Configuration.SendChatConfirmations)
+            ChatGui.Print(message, "CreateXIV");
+    }
 
     public void ToggleMainUi() => MainWindow.Toggle();
 
@@ -184,6 +220,34 @@ public sealed unsafe class Plugin : IDalamudPlugin
     internal IReadOnlyList<MacroSuggestion> GetMacroSuggestions(string query)
         => CommandSuggestionService.GetMacroSuggestions(query);
 
+    internal string GetMacroDisplayName(string commandInput)
+    {
+        if (!TryParseSingleMacroReference(commandInput, out var macroRef))
+            return string.Empty;
+
+        return CommandSuggestionService.GetMacroDisplayName(macroRef.Set, macroRef.Number);
+    }
+
+    internal bool TryFindAliasUsingCommand(string commandInput, string? ignoredAliasInput, out string alias)
+    {
+        alias = string.Empty;
+        var wanted = NormalizeCommand(commandInput);
+        var ignored = NormalizeAlias(ignoredAliasInput ?? string.Empty);
+
+        if (string.IsNullOrWhiteSpace(wanted))
+            return false;
+
+        var existing = Configuration.Aliases.FirstOrDefault(a =>
+            !string.Equals(NormalizeAlias(a.Alias), ignored, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(NormalizeCommand(a.Command), wanted, StringComparison.OrdinalIgnoreCase));
+
+        if (existing == null)
+            return false;
+
+        alias = NormalizeAlias(existing.Alias);
+        return true;
+    }
+
     internal bool IsAliasNameUsableForInput(string aliasInput)
         => !TryGetAliasInputProblem(aliasInput, out _);
 
@@ -257,6 +321,68 @@ public sealed unsafe class Plugin : IDalamudPlugin
     public bool AddOrUpdateCommandAlias(string aliasInput, string commandInput, string category, bool pinned, out string message)
         => AddOrUpdateAliasInternal(aliasInput, commandInput, category, pinned, AliasKind.Command, out message);
 
+    // Enable/disable alias without deleting the saved entry.
+    // Disabled aliases are unregistered from Dalamud so they cannot be executed from chat,
+    // while re-enabled aliases are only registered again if the saved target still validates.
+    // This is for keeping the toggle safe for broken/imported aliases and also makes the change undoable.
+    public void SetAliasEnabled(string aliasInput, bool enabled)
+    {
+        var normalizedAlias = NormalizeAlias(aliasInput);
+
+        var existing = Configuration.Aliases.FirstOrDefault(x =>
+            string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
+
+        if (existing == null || existing.Enabled == enabled)
+            return;
+
+        PushUndoSnapshot();
+
+        if (!enabled)
+            UnregisterAliasCommand(existing.Alias);
+        else if (ValidateEntry(existing, out _))
+            RegisterAliasCommand(existing);
+
+        existing.Enabled = enabled;
+        Configuration.Save();
+    }
+
+    public void SetAliasPinned(string aliasInput, bool pinned)
+    {
+        var normalizedAlias = NormalizeAlias(aliasInput);
+
+        var existing = Configuration.Aliases.FirstOrDefault(x =>
+            string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
+
+        if (existing == null || existing.Pinned == pinned)
+            return;
+
+        PushUndoSnapshot();
+        existing.Pinned = pinned;
+        SortAliases();
+        Configuration.Save();
+    }
+
+    public void SetAliasCooldownSeconds(string aliasInput, float seconds)
+    {
+        // The UI works in seconds with decimals, while the saved model uses milliseconds.
+        // Clamp here as well as in the slider so imported/old configs cannot sneak in odd values.
+        var normalizedAlias = NormalizeAlias(aliasInput);
+        var existing = Configuration.Aliases.FirstOrDefault(x =>
+            string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
+
+        if (existing == null)
+            return;
+
+        seconds = MathF.Min(5f, MathF.Max(1f, seconds));
+        var ms = Math.Max(1000, (int)MathF.Round(seconds * 1000f));
+        if (existing.CooldownMs == ms)
+            return;
+
+        PushUndoSnapshot();
+        existing.CooldownMs = ms;
+        Configuration.Save();
+    }
+
     public void DeleteAlias(string aliasInput)
     {
         var normalizedAlias = NormalizeAlias(aliasInput);
@@ -267,47 +393,32 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (existing == null)
             return;
 
+        PushUndoSnapshot();
         UnregisterAliasCommand(existing.Alias);
-
-        // Undo stack
-        deletedStack.Push(CloneEntry(existing));
 
         Configuration.Aliases.Remove(existing);
         Configuration.Save();
 
-        ChatGui.Print($"Deleted alias: {normalizedAlias}.", "CreateXIV");
+        PrintConfirmation($"Deleted alias: {normalizedAlias}.");
     }
 
-    public bool UndoLastDelete(out string message)
+    public bool UndoLastChange(out string message)
     {
-        if (deletedStack.Count == 0)
+        if (undoStack.Count == 0)
         {
             message = "Nothing to undo.";
             return false;
         }
 
-        var restored = deletedStack.Pop();
+        var previous = undoStack.Pop();
 
-        // Re-number to the end
-        restored.Number = GetNextAliasNumber();
-        restored.Alias = NormalizeAlias(restored.Alias);
-        restored.Command = NormalizeCommand(restored.Command);
-
-        // Validate again
-        if (!ValidateEntry(restored, out message))
-            return false;
-
-        if (!RegisterAliasCommand(restored))
-        {
-            message = $"Could not register alias {restored.Alias}.";
-            return false;
-        }
-
-        Configuration.Aliases.Add(restored);
-        SortAliases();
+        UnregisterAllAliasCommands();
+        Configuration.Aliases = previous.Select(CloneEntry).ToList();
+        NormalizeSavedAliases();
+        RegisterAllAliasCommands();
         Configuration.Save();
 
-        message = $"Restored alias: {restored.Alias}";
+        message = "Undone.";
         return true;
     }
 
@@ -351,6 +462,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
         }
 
+        PushUndoSnapshot();
         Configuration.Aliases.Add(copy);
         SortAliases();
         Configuration.Save();
@@ -393,43 +505,120 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     public bool ImportAliasesJson(string json, out string message)
     {
-        try
+        // Invalid clipboard content is a normal user mistake, not a plugin failure.
+        // These errors are kept as chat feedback instead of logging exceptions that make Dalamud send warn notification to the user.
+        if (string.IsNullOrWhiteSpace(json))
         {
-            var imported = JsonSerializer.Deserialize<List<AliasEntry>>(json);
-
-            if (imported == null || imported.Count == 0)
-            {
-                message = "Nothing to import.";
-                return false;
-            }
-
-            // Remove existing registered handlers
-            UnregisterAllAliasCommands();
-
-            // Replace list
-            Configuration.Aliases = imported;
-
-            // Normalize + re-number safely
-            Configuration.NextAliasNumber = 1;
-
-            foreach (var a in Configuration.Aliases)
-                a.Number = 0;
-
-            NormalizeSavedAliases();
-
-            // Re-register
-            RegisterAllAliasCommands();
-            Configuration.Save();
-
-            message = $"Imported {Configuration.Aliases.Count} aliases.";
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Import failed");
-            message = "Import failed: invalid JSON.";
+            message = "Clipboard is empty. Copy a CreateXIV export first, then try importing again.";
             return false;
         }
+
+        List<AliasEntry>? imported;
+        try
+        {
+            imported = JsonSerializer.Deserialize<List<AliasEntry>>(json);
+        }
+        catch (JsonException)
+        {
+            message = "Clipboard does not contain a valid CreateXIV alias export.";
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            message = "Clipboard data is not a supported CreateXIV alias export.";
+            return false;
+        }
+
+        if (imported == null || imported.Count == 0)
+        {
+            message = "No aliases were found in the clipboard export.";
+            return false;
+        }
+
+        PushUndoSnapshot();
+
+        UnregisterAllAliasCommands();
+        Configuration.Aliases = imported;
+        Configuration.NextAliasNumber = 1;
+
+        foreach (var a in Configuration.Aliases)
+            a.Number = 0;
+
+        NormalizeSavedAliases();
+        RegisterAllAliasCommands();
+        Configuration.Save();
+
+        var commands = Configuration.Aliases.Count(x => x.Kind == AliasKind.Command);
+        var macros = Configuration.Aliases.Count(x => x.Kind == AliasKind.Macro);
+        message = $"Imported {Configuration.Aliases.Count} aliases from clipboard ({commands} commands, {macros} macros).";
+        return true;
+    }
+
+    // Handles the chat-side creation flow for /create without opening the UI.
+    // This keeps the command strict on purpose: it only accepts alias + target + optional existing category,
+    // returns user-facing validation messages and then reuses the same add/update path as the main window
+    // so chat-created aliases behave exactly like aliases created from the editor interface.
+    private bool TryCreateAliasFromChat(string rawArgs, out string message, out bool ok)
+    {
+        ok = false;
+        message = string.Empty;
+
+        var parts = (rawArgs ?? string.Empty)
+            .Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts.Length < 2 || parts.Length > 3)
+        {
+            message = CreateAliasUsage;
+            return true;
+        }
+
+        var alias = parts[0];
+        var target = parts[1];
+        var category = string.Empty;
+
+        if (parts.Length == 3)
+        {
+            category = parts[2].Trim();
+            if (!CategoryExists(category))
+            {
+                message = $"Category '{category}' does not exist. Use an existing category or leave it empty.";
+                return true;
+            }
+        }
+
+        if (TryGetAliasInputProblem(alias, out var aliasProblem))
+        {
+            message = aliasProblem + " " + CreateAliasUsage;
+            return true;
+        }
+
+        var kind = TryParseSingleMacroReference(target, out _) ? AliasKind.Macro : AliasKind.Command;
+        var created = kind == AliasKind.Macro
+            ? AddOrUpdateMacroAlias(alias, target, category, false, out message)
+            : AddOrUpdateCommandAlias(alias, target, category, false, out message);
+
+        ok = created;
+        if (created)
+        {
+            var catText = string.IsNullOrWhiteSpace(category) ? string.Empty : $" in '{category}'";
+            message = $"Created {GetKindLabel(kind)} alias {NormalizeAlias(alias)} -> {(kind == AliasKind.Command ? EnsureSlashCommand(target) : NormalizeCommand(target))}{catText}.";
+        }
+        else
+        {
+            message += " " + CreateAliasUsage;
+        }
+
+        return true;
+    }
+
+    private bool CategoryExists(string category)
+    {
+        var cat = (category ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(cat))
+            return true;
+
+        return Configuration.Aliases.Any(a => string.Equals((a.Category ?? string.Empty).Trim(), cat, StringComparison.OrdinalIgnoreCase)) ||
+               Configuration.CategoryColors.Keys.Any(k => string.Equals((k ?? string.Empty).Trim(), cat, StringComparison.OrdinalIgnoreCase));
     }
 
     // =========================
@@ -512,6 +701,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
         if (existing != null)
         {
+            PushUndoSnapshot();
             UnregisterAliasCommand(existing.Alias);
 
             existing.Alias = normalizedAlias;
@@ -523,7 +713,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             if (!ValidateEntry(existing, out message))
                 return false;
 
-            if (!RegisterAliasCommand(existing))
+            if (existing.Enabled && !RegisterAliasCommand(existing))
             {
                 message = $"Could not register alias {normalizedAlias}.";
                 return false;
@@ -543,7 +733,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             Command = normalizedCommand,
             Kind = kind,
             Category = (category ?? string.Empty).Trim(),
-            Pinned = pinned
+            Pinned = pinned,
+            Enabled = true,
+            CooldownMs = 1000
         };
 
         if (!ValidateEntry(newEntry, out message))
@@ -555,6 +747,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return false;
         }
 
+        PushUndoSnapshot();
         Configuration.Aliases.Add(newEntry);
         SortAliases();
         Configuration.Save();
@@ -565,6 +758,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private bool ValidateEntry(AliasEntry entry, out string message)
     {
+        // Validation is intentionally stricter than the UI hints because imported aliases and chat-created aliases
+        // can bypass some of the normal input flow.
         var alias = NormalizeAlias(entry.Alias);
         var cmd = NormalizeCommand(entry.Command);
 
@@ -595,6 +790,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             }
         }
         else
+        // This rejects command aliases that do not resolve to either a currently registered Dalamud/plugin command
+        // or a known native game command. It is intentionally checked at validation time so broken aliases are
+        // caught before saving/importing instead of failing later when the user tries to execute them.
         {
             if (!IsKnownCommandAvailable(cmd))
             {
@@ -607,6 +805,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
         return true;
     }
 
+    private void PushUndoSnapshot()
+    {
+        undoStack.Push(Configuration.Aliases.Select(CloneEntry).ToList());
+    }
+
     private static AliasEntry CloneEntry(AliasEntry src)
     {
         return new AliasEntry
@@ -617,6 +820,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             Kind = src.Kind,
             Category = src.Category,
             Pinned = src.Pinned,
+            Enabled = src.Enabled,
             CooldownMs = src.CooldownMs,
         };
     }
@@ -670,6 +874,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
             if (entry.Number <= 0)
                 entry.Number = 0;
+
+            if (entry.CooldownMs < 1000)
+                entry.CooldownMs = 1000;
         }
 
         var orderedWithoutNumbers = Configuration.Aliases
@@ -715,7 +922,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             entry.Alias = NormalizeAlias(entry.Alias);
             entry.Command = NormalizeCommand(entry.Command);
 
-            if (!CanRegisterSavedAlias(entry))
+            if (!entry.Enabled || !CanRegisterSavedAlias(entry))
                 continue;
 
             RegisterAliasCommand(entry);
@@ -738,6 +945,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private bool RegisterAliasCommand(AliasEntry entry)
     {
+        // Register a few casing variants because slash commands are commonly typed casually in chat.
+        // The variants all point back to the normalized alias entry.
         var alias = NormalizeAlias(entry.Alias);
         var commandToRun = NormalizeCommand(entry.Command);
 
@@ -835,6 +1044,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
 
     private void ExecuteAlias(string aliasUsed)
     {
+        // "Wait" is an execution delay, not a spam throttle.
+        // Queue the alias and run it later on the framework thread so native/game commands stay on a safe path.
         var normalizedAlias = NormalizeAlias(aliasUsed);
 
         var entry = Configuration.Aliases.FirstOrDefault(x =>
@@ -843,6 +1054,55 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (entry == null)
         {
             ChatGui.PrintError($"Alias {normalizedAlias} was not found.", "CreateXIV");
+            return;
+        }
+
+        if (!entry.Enabled)
+        {
+            ChatGui.PrintError($"Alias {normalizedAlias} is disabled.", "CreateXIV");
+            return;
+        }
+
+        var waitMs = Math.Max(1000, entry.CooldownMs);
+        pendingAliasRuns.Add((normalizedAlias, DateTime.UtcNow.AddMilliseconds(waitMs)));
+    }
+
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        // Delayed aliases are drained from the end so removing due items does not invalidate later indexes.
+        if (pendingAliasRuns.Count == 0)
+            return;
+
+        var now = DateTime.UtcNow;
+
+        for (var i = pendingAliasRuns.Count - 1; i >= 0; i--)
+        {
+            var pending = pendingAliasRuns[i];
+            if (pending.DueUtc > now)
+                continue;
+
+            pendingAliasRuns.RemoveAt(i);
+            ExecuteAliasNow(pending.Alias);
+        }
+    }
+
+    private void ExecuteAliasNow(string aliasUsed)
+    {
+        // Re-read the alias right before execution in case the user disabled, edited or deleted it while it was waiting.
+        var normalizedAlias = NormalizeAlias(aliasUsed);
+
+        var entry = Configuration.Aliases.FirstOrDefault(x =>
+            string.Equals(NormalizeAlias(x.Alias), normalizedAlias, StringComparison.OrdinalIgnoreCase));
+
+        if (entry == null)
+        {
+            ChatGui.PrintError($"Alias {normalizedAlias} was not found.", "CreateXIV");
+            return;
+        }
+
+        if (!entry.Enabled)
+        {
+            ChatGui.PrintError($"Alias {normalizedAlias} is disabled.", "CreateXIV");
             return;
         }
 
@@ -864,22 +1124,6 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             ChatGui.PrintError($"Alias {alias} has no command assigned.", "CreateXIV");
             return;
-        }
-
-        // cooldown
-        var cd = entry.CooldownMs > 0 ? entry.CooldownMs : Configuration.CommandCooldownMs;
-
-        if (cd > 0)
-        {
-            if (lastCommandExecUtc.TryGetValue(alias, out var last))
-            {
-                var diff = (DateTime.UtcNow - last).TotalMilliseconds;
-
-                if (diff < cd)
-                    return; // Silently ignore spam
-            }
-
-            lastCommandExecUtc[alias] = DateTime.UtcNow;
         }
 
         if (CommandManager.ProcessCommand(commandToRun))
@@ -999,6 +1243,11 @@ public sealed unsafe class Plugin : IDalamudPlugin
         {
             shared = true;
             value = trimmed[7..].Trim();
+        }
+        else if (trimmed.StartsWith("macroshared:", StringComparison.OrdinalIgnoreCase))
+        {
+            shared = true;
+            value = trimmed[12..].Trim();
         }
         else
         {

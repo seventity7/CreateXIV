@@ -10,11 +10,10 @@ public class Configuration : IPluginConfiguration
     public int Version { get; set; } = 1;
 
     public bool IsMainWindowMovable { get; set; } = true;
+    public bool SendChatConfirmations { get; set; } = true;
 
     public int NextAliasNumber { get; set; } = 1;
 
-    /// Global cooldown (ms) for COMMAND aliases (prevents spam), 0 = disabled
-    public int CommandCooldownMs { get; set; } = 0;
 
     public List<AliasEntry> Aliases { get; set; } = new();
 
@@ -42,6 +41,7 @@ public class AliasEntry
 
     public string Category { get; set; } = string.Empty;
     public bool Pinned { get; set; } = false;
+    public bool Enabled { get; set; } = true;
 
-    public int CooldownMs { get; set; } = 0;
+    public int CooldownMs { get; set; } = 1000;
 }

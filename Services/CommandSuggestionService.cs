@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Linq;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
@@ -48,6 +47,11 @@ internal static unsafe class CommandSuggestionService
             .ToList();
     }
 
+    // The plugin no longer uses Reflection as Fallback.
+    // Builds and caches the list of native commands from Lumina's TextCommand sheet.
+    // The cache is locked because this data only needs to be loaded once and failing to read it
+    // should not break the plugin; it just means that native command validation will be more conservative
+    // until the sheet can be read normally.
     private static IReadOnlyList<string> GetNativeGameCommands(IDataManager dataManager)
     {
         if (nativeCommandCache != null)
@@ -69,7 +73,6 @@ internal static unsafe class CommandSuggestionService
                     AddNativeCommand(commands, row.ShortCommand);
                     AddNativeCommand(commands, row.Alias);
                     AddNativeCommand(commands, row.ShortAlias);
-                    AddNativeCommandsFromTextCommandRow(commands, row);
                 }
             }
             catch (Exception ex)
@@ -84,32 +87,6 @@ internal static unsafe class CommandSuggestionService
             return nativeCommandCache;
         }
     }
-
-    private static void AddNativeCommandsFromTextCommandRow(Dictionary<string, string> commands, TextCommand row)
-    {
-        const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public;
-        var rowType = typeof(TextCommand);
-
-        foreach (var field in rowType.GetFields(Flags))
-        {
-            if (!IsCommandLikeMember(field.Name))
-                continue;
-
-            AddNativeCommand(commands, field.GetValue(row));
-        }
-
-        foreach (var property in rowType.GetProperties(Flags))
-        {
-            if (!IsCommandLikeMember(property.Name) || property.GetIndexParameters().Length != 0)
-                continue;
-
-            AddNativeCommand(commands, property.GetValue(row));
-        }
-    }
-
-    private static bool IsCommandLikeMember(string name)
-        => name.Contains("Command", StringComparison.OrdinalIgnoreCase) ||
-           name.Contains("Alias", StringComparison.OrdinalIgnoreCase);
 
     private static void AddNativeCommand(Dictionary<string, string> commands, object? value)
     {
@@ -154,6 +131,24 @@ internal static unsafe class CommandSuggestionService
             return false;
 
         return GetNativeGameCommands(dataManager).Contains(token, StringComparer.OrdinalIgnoreCase);
+    }
+
+
+    internal static string GetMacroDisplayName(uint set, uint number)
+    {
+        var macroModule = RaptureMacroModule.Instance();
+        if (macroModule == null || number > 99)
+            return string.Empty;
+
+        var macro = macroModule->GetMacro(set, number);
+        if (macro == null || !macro->IsNotEmpty())
+            return string.Empty;
+
+        var name = macro->Name.ToString().Trim();
+        if (!string.IsNullOrWhiteSpace(name))
+            return name;
+
+        return set == 1u ? $"Shared Macro {number}" : $"Macro {number}";
     }
 
     internal static bool IsMacroAvailable(uint set, uint number)
