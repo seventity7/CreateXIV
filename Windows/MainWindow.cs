@@ -1655,8 +1655,8 @@ public class MainWindow : Window, IDisposable
     private void DrawCooldownEditor(int i, AliasEntry entry)
     {
         // Wait is stored as milliseconds in the config but is edited as seconds in the table.
-        // The slider is intentionally limited to a small 1-5s to avoid possible issues.
-        var seconds = MathF.Max(1f, entry.CooldownMs / 1000f);
+        // The slider is intentionally limited to a small 0-5s range to avoid possible issues.
+        var seconds = MathF.Min(5f, MathF.Max(0f, entry.CooldownMs / 1000f));
         var avail = ImGui.GetContentRegionAvail().X;
         var width = MathF.Min(78f, MathF.Max(58f, avail - 4f));
         var cursorX = ImGui.GetCursorPosX();
@@ -1667,9 +1667,9 @@ public class MainWindow : Window, IDisposable
         ImGui.PushStyleVar(ImGuiStyleVar.GrabMinSize, 6f);
         ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(ImGui.GetStyle().FramePadding.X, 1f));
         ImGui.SetNextItemWidth(width);
-        if (ImGui.SliderFloat($"##wait{i}", ref seconds, 1f, 5f, "%.1f"))
+        if (ImGui.SliderFloat($"##wait{i}", ref seconds, 0f, 5f, "%.1f"))
         {
-            seconds = MathF.Max(1f, seconds);
+            seconds = MathF.Max(0f, seconds);
             plugin.SetAliasCooldownSeconds(entry.Alias, seconds);
         }
         ImGui.PopStyleVar(2);

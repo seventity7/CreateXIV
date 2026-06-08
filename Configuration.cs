@@ -13,6 +13,7 @@ public class Configuration : IPluginConfiguration
     public bool SendChatConfirmations { get; set; } = true;
 
     public int NextAliasNumber { get; set; } = 1;
+    public bool WaitOneToZeroMigrationDone { get; set; } = false;
 
 
     public List<AliasEntry> Aliases { get; set; } = new();
@@ -43,5 +44,5 @@ public class AliasEntry
     public bool Pinned { get; set; } = false;
     public bool Enabled { get; set; } = true;
 
-    public int CooldownMs { get; set; } = 1000;
+    public int CooldownMs { get; set; } = 0;
 }

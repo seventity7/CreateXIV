@@ -1,6 +1,7 @@
 ﻿using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Interface;
+using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -28,7 +29,10 @@ public sealed unsafe class Plugin : IDalamudPlugin
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
 
     private const string CreateCommandName = "/create";
-    private const string CreateAliasUsage = "Usage: /create <alias> <command|macro:##|shared:##> [category-Optional]\nExample: /create mv mastervolume";
+    private const string CreateAliasUsage = "Usage: /create <alias> <command|macro:##|shared:##> [category-Optional]\nExample: /create mv mastervolume\nUse /create list to print all aliases.";
+
+    private const ushort AliasListAliasColor = 43;
+    private const ushort AliasListCommandColor = 500;
 
     public Configuration Configuration { get; init; }
 
@@ -50,6 +54,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         NormalizeSavedAliases();
+        MigrateOldDefaultWaitOnce();
 
         ConfigWindow = new ConfigWindow(this);
         MainWindow = new MainWindow(this);
@@ -105,6 +110,9 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return;
         }
 
+        if (TryHandleCreateListCommand(args))
+            return;
+
         if (TryCreateAliasFromChat(args, out var message, out var ok))
         {
             if (ok)
@@ -124,6 +132,44 @@ public sealed unsafe class Plugin : IDalamudPlugin
         // Errors still bypass this helper so important failures will never be hidden.
         if (Configuration.SendChatConfirmations)
             ChatGui.Print(message, "CreateXIV");
+    }
+
+    private bool TryHandleCreateListCommand(string args)
+    {
+        if (!string.Equals((args ?? string.Empty).Trim(), "list", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (Configuration.Aliases.Count == 0)
+        {
+            ChatGui.Print("No aliases registered.", "CreateXIV");
+            return true;
+        }
+
+        foreach (var entry in Configuration.Aliases
+                     .OrderBy(x => NormalizeAlias(x.Alias), StringComparer.OrdinalIgnoreCase))
+        {
+            var alias = NormalizeAlias(entry.Alias);
+            var target = entry.Kind == AliasKind.Command
+                ? EnsureSlashCommand(entry.Command)
+                : NormalizeCommand(entry.Command);
+
+            if (string.IsNullOrWhiteSpace(alias) || string.IsNullOrWhiteSpace(target))
+                continue;
+
+            var line = new SeStringBuilder()
+                .AddUiForeground(AliasListAliasColor)
+                .AddText(alias)
+                .AddUiForegroundOff()
+                .AddText(" -> ")
+                .AddUiForeground(AliasListCommandColor)
+                .AddText(target)
+                .AddUiForegroundOff()
+                .Build();
+
+            ChatGui.Print(line, "CreateXIV");
+        }
+
+        return true;
     }
 
     public void ToggleMainUi() => MainWindow.Toggle();
@@ -373,8 +419,8 @@ public sealed unsafe class Plugin : IDalamudPlugin
         if (existing == null)
             return;
 
-        seconds = MathF.Min(5f, MathF.Max(1f, seconds));
-        var ms = Math.Max(1000, (int)MathF.Round(seconds * 1000f));
+        seconds = MathF.Min(5f, MathF.Max(0f, seconds));
+        var ms = Math.Max(0, (int)MathF.Round(seconds * 1000f));
         if (existing.CooldownMs == ms)
             return;
 
@@ -735,7 +781,7 @@ public sealed unsafe class Plugin : IDalamudPlugin
             Category = (category ?? string.Empty).Trim(),
             Pinned = pinned,
             Enabled = true,
-            CooldownMs = 1000
+            CooldownMs = 0
         };
 
         if (!ValidateEntry(newEntry, out message))
@@ -875,8 +921,10 @@ public sealed unsafe class Plugin : IDalamudPlugin
             if (entry.Number <= 0)
                 entry.Number = 0;
 
-            if (entry.CooldownMs < 1000)
-                entry.CooldownMs = 1000;
+            if (entry.CooldownMs < 0)
+                entry.CooldownMs = 0;
+            else if (entry.CooldownMs > 5000)
+                entry.CooldownMs = 5000;
         }
 
         var orderedWithoutNumbers = Configuration.Aliases
@@ -898,6 +946,30 @@ public sealed unsafe class Plugin : IDalamudPlugin
             .ToList();
 
         Configuration.Save();
+    }
+
+    private void MigrateOldDefaultWaitOnce()
+    {
+        if (Configuration.WaitOneToZeroMigrationDone)
+            return;
+
+        var changed = false;
+
+        foreach (var entry in Configuration.Aliases)
+        {
+            if (entry.CooldownMs != 1000)
+                continue;
+
+            entry.CooldownMs = 0;
+            changed = true;
+        }
+
+        Configuration.WaitOneToZeroMigrationDone = true;
+
+        if (changed)
+            Configuration.Save();
+        else
+            Configuration.Save();
     }
 
     private void SortAliases()
@@ -1063,7 +1135,13 @@ public sealed unsafe class Plugin : IDalamudPlugin
             return;
         }
 
-        var waitMs = Math.Max(1000, entry.CooldownMs);
+        var waitMs = Math.Max(0, entry.CooldownMs);
+        if (waitMs <= 0)
+        {
+            ExecuteAliasNow(normalizedAlias);
+            return;
+        }
+
         pendingAliasRuns.Add((normalizedAlias, DateTime.UtcNow.AddMilliseconds(waitMs)));
     }
 
